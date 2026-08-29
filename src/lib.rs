@@ -1,6 +1,7 @@
 //! Carapace Google Search Tool Plugin.
 //!
-//! Provides the `google_search` tool to Carapace via the WebAssembly Component Model.
+//! Provides the `google_search` tool to Carapace via the WebAssembly Component Model
+//! backed by Google Vertex AI Search / Google Enterprise Web Search (Discovery Engine API).
 
 #[cfg(target_arch = "wasm32")]
 #[allow(warnings)]
@@ -29,33 +30,57 @@ pub mod types;
 pub mod url_encoder;
 
 pub const PLUGIN_ID: &str = "google-search-tool";
-pub const PLUGIN_NAME: &str = "Google Search Tool";
+pub const PLUGIN_NAME: &str = "Google Vertex AI Search Tool";
 pub const PLUGIN_DESCRIPTION: &str =
-    "Search the web using Google Search (Custom Search JSON API)";
-pub const PLUGIN_VERSION: &str = "0.1.0";
+    "Search web or enterprise content using Google Vertex AI Search / Google Enterprise Web Search (Discovery Engine API)";
+pub const PLUGIN_VERSION: &str = "0.2.0";
 
 /// Manifest JSON embedded in the WASM binary custom section.
 pub const MANIFEST_JSON: &str = r#"{
   "id": "google-search-tool",
-  "name": "Google Search Tool",
-  "description": "Search the web using Google Search (Custom Search JSON API)",
-  "version": "0.1.0",
+  "name": "Google Vertex AI Search Tool",
+  "description": "Search web or enterprise content using Google Vertex AI Search / Google Enterprise Web Search (Discovery Engine API)",
+  "version": "0.2.0",
   "kind": "tool",
   "permissions": {
     "http": {
       "allowed_urls": [
-        "https://www.googleapis.com/customsearch/v1**",
-        "https://customsearch.googleapis.com/**"
+        "https://discoveryengine.googleapis.com/**",
+        "https://*.discoveryengine.googleapis.com/**"
       ]
     },
     "credentials": {
       "allowed_keys": [
+        "project_id",
+        "project-id",
+        "project",
+        "gcp_project",
+        "data_store_id",
+        "data-store-id",
+        "datastore_id",
+        "datastore",
+        "engine_id",
+        "engine-id",
+        "engine",
+        "app_id",
+        "app-id",
+        "location",
+        "collection",
+        "collection_id",
+        "serving_config",
+        "serving_config_id",
         "api_key",
         "api-key",
         "key",
+        "auth_token",
+        "auth-token",
+        "access_token",
+        "access-token",
+        "bearer_token",
+        "bearer-token",
+        "token",
         "cx",
         "search_engine_id",
-        "search-engine-id",
         "*"
       ]
     }
@@ -116,15 +141,12 @@ impl ToolGuest for Component {
             &params,
             credential_get,
             config_get,
-            |url| {
+            |url, headers, body| {
                 let req = HttpRequest {
-                    method: "GET".to_string(),
+                    method: "POST".to_string(),
                     url: url.to_string(),
-                    headers: vec![
-                        ("Accept".to_string(), "application/json".to_string()),
-                        ("User-Agent".to_string(), "Carapace-Google-Search-Plugin/0.1.0".to_string()),
-                    ],
-                    body: None,
+                    headers: headers.to_vec(),
+                    body: Some(body.to_vec()),
                 };
 
                 match http_fetch(&req) {

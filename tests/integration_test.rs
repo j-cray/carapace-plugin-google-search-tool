@@ -1,4 +1,4 @@
-//! Integration test for Carapace Google Search Tool plugin.
+//! Integration test for Carapace Google Vertex AI Search Tool plugin.
 //!
 //! Tests that the compiled WASM component can be loaded by Carapace's
 //! PluginLoader and PluginRuntime, registers its manifest and tools,
@@ -83,11 +83,12 @@ async fn test_carapace_loads_google_search_tool_component() {
     let defs = tool_instance.get_definitions().expect("Should get tool definitions");
     let search_tool = defs.iter().find(|d| d.name == "google_search").expect("Tool 'google_search' should exist");
 
-    assert!(search_tool.description.contains("Google Search"));
+    assert!(search_tool.description.contains("Vertex AI Search") || search_tool.description.contains("Google"));
     assert!(search_tool.input_schema.contains("query"));
-    assert!(search_tool.input_schema.contains("exact_terms"));
-    assert!(search_tool.input_schema.contains("exclude_terms"));
-    assert!(search_tool.input_schema.contains("sort"));
+    assert!(search_tool.input_schema.contains("project_id"));
+    assert!(search_tool.input_schema.contains("data_store_id"));
+    assert!(search_tool.input_schema.contains("filter"));
+    assert!(search_tool.input_schema.contains("order_by"));
 
     let ctx = ToolContext {
         agent_id: None,

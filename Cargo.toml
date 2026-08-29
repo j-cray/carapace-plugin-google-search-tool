@@ -1,9 +1,9 @@
 [package]
 name = "carapace-plugin-google-search-tool"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jake Wray <jakewray@mailbox.org>"]
-description = "Carapace plugin providing Google Custom Search tool capabilities"
+description = "Carapace plugin providing Google Vertex AI Search and Enterprise Web Search capabilities"
 license = "Apache-2.0"
 
 [lib]

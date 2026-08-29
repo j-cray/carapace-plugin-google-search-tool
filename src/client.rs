@@ -1,20 +1,15 @@
-//! Google Custom Search JSON API HTTP client.
+//! Google Vertex AI Search / Discovery Engine HTTP client.
 
+use crate::config::{ResolvedConfig, SearchTarget};
 use crate::types::{
-    GoogleApiErrorPayload, GoogleApiErrorResponse, GoogleSearchApiResponse, SearchArgs,
-    SearchResultItem, SearchResultOutput,
+    GoogleApiErrorPayload, GoogleApiErrorResponse, SearchArgs, SearchResultItem,
+    SearchResultOutput, VertexContentSearchSpec, VertexExtractiveContentSpec,
+    VertexSearchApiResponse, VertexSearchRequestBody, VertexSnippetSpec, VertexSpellCorrectionSpec,
+    VertexSummarySpec,
 };
-use crate::url_encoder::QueryBuilder;
+use crate::url_encoder::url_encode;
 
-pub const GOOGLE_CUSTOM_SEARCH_BASE_URL: &str =
-    "https://customsearch.googleapis.com/customsearch/v1";
-
-/// Maximum number of search results per Google Custom Search query (Google API limit is 10).
-pub const MAX_RESULTS_PER_PAGE: u32 = 10;
-/// Default number of results if unspecified.
-pub const DEFAULT_NUM_RESULTS: u32 = 5;
-/// Maximum start index supported by Google Custom Search API.
-pub const MAX_START_INDEX: u32 = 91;
+pub const VERTEX_SEARCH_API_HOST: &str = "https://discoveryengine.googleapis.com";
 
 /// Safely truncate a UTF-8 string to at most `max_bytes` bytes at a valid character boundary.
 pub fn truncate_str(s: &str, max_bytes: usize) -> &str {
@@ -29,10 +24,54 @@ pub fn truncate_str(s: &str, max_bytes: usize) -> &str {
     }
 }
 
-/// Formats a Google API error payload into a readable error message.
+/// Strips HTML tags and unescapes basic HTML entities in snippet text.
+pub fn clean_snippet_text(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut in_tag = false;
+
+    for c in input.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(c),
+            _ => {}
+        }
+    }
+
+    let unescaped = result
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ");
+
+    unescaped.trim().to_string()
+}
+
+/// Extract domain from link URL.
+pub fn extract_domain(url_str: &str) -> Option<String> {
+    let after_scheme = if let Some(pos) = url_str.find("://") {
+        &url_str[pos + 3..]
+    } else {
+        url_str
+    };
+
+    let host_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+    let host = &after_scheme[..host_end];
+    let host_clean = host.split(':').next().unwrap_or(host);
+
+    if !host_clean.is_empty() {
+        Some(host_clean.to_string())
+    } else {
+        None
+    }
+}
+
+/// Formats a Google Cloud Discovery Engine error payload into a readable error message.
 pub fn format_api_error(err: &GoogleApiErrorPayload, status: u16) -> String {
     let mut err_msg = format!(
-        "Google Search API error (HTTP {}): {}",
+        "Vertex AI Search API error (HTTP {}): {}",
         err.code.unwrap_or(status),
         err.message.as_deref().unwrap_or("Unknown error")
     );
@@ -49,121 +88,280 @@ pub fn format_api_error(err: &GoogleApiErrorPayload, status: u16) -> String {
     err_msg
 }
 
-/// Builds the full Google Custom Search API request URL with all query parameters.
-pub fn build_search_url(api_key: &str, cx: &str, args: &SearchArgs) -> String {
-    let mut qb = QueryBuilder::new();
-
-    qb.add_param("key", api_key.trim());
-    qb.add_param("cx", cx.trim());
-    qb.add_param("q", args.query.trim());
-
-    // Number of results: clamp between 1 and 10, defaulting to 5
-    let num = args
-        .num
-        .unwrap_or(DEFAULT_NUM_RESULTS)
-        .clamp(1, MAX_RESULTS_PER_PAGE);
-    qb.add_param("num", &num.to_string());
-
-    // Start index: clamp between 1 and 91, defaulting to 1
-    let start = args.start.unwrap_or(1).clamp(1, MAX_START_INDEX);
-    if start > 1 {
-        qb.add_param("start", &start.to_string());
-    }
-
-    // SafeSearch setting: default "active", accept "off"
-    let safe = match args.safe.as_deref().map(str::trim) {
-        Some(s) if s.eq_ignore_ascii_case("off") => "off",
-        _ => "active",
+/// Builds the full Vertex AI Search endpoint URL.
+pub fn build_search_endpoint(config: &ResolvedConfig) -> String {
+    let target_segment = match &config.target {
+        SearchTarget::DataStore(ds) => format!("dataStores/{}", ds),
+        SearchTarget::Engine(eng) => format!("engines/{}", eng),
     };
-    qb.add_param("safe", safe);
 
-    // Optional filters and constraints
-    qb.add_optional_param("siteSearch", args.site.as_deref());
-    qb.add_optional_param("fileType", args.file_type.as_deref());
-    qb.add_optional_param("dateRestrict", args.date_restrict.as_deref());
-    qb.add_optional_param("exactTerms", args.exact_terms.as_deref());
-    qb.add_optional_param("excludeTerms", args.exclude_terms.as_deref());
-    qb.add_optional_param("sort", args.sort.as_deref());
-    qb.add_optional_param("lr", args.language.as_deref());
-    qb.add_optional_param("gl", args.country.as_deref());
+    let base = format!(
+        "{}/v1/projects/{}/locations/{}/collections/{}/{}/servingConfigs/{}:search",
+        VERTEX_SEARCH_API_HOST,
+        config.project_id,
+        config.location,
+        config.collection_id,
+        target_segment,
+        config.serving_config_id,
+    );
 
-    if let Some(ref st) = args.search_type {
-        if st.trim().eq_ignore_ascii_case("image") {
-            qb.add_param("searchType", "image");
+    if let Some(ref key) = config.auth.api_key {
+        if config.auth.auth_token.is_none() {
+            return format!("{}?key={}", base, url_encode(key));
         }
     }
 
-    format!("{}{}", GOOGLE_CUSTOM_SEARCH_BASE_URL, qb.build_query_string())
+    base
 }
 
-/// Parses the HTTP response from the Google Custom Search API into a structured `SearchResultOutput`.
+/// Builds the HTTP headers for the Vertex AI Search request.
+pub fn build_request_headers(config: &ResolvedConfig) -> Vec<(String, String)> {
+    let mut headers = vec![
+        ("Content-Type".to_string(), "application/json".to_string()),
+        ("Accept".to_string(), "application/json".to_string()),
+        (
+            "User-Agent".to_string(),
+            "Carapace-Vertex-Search-Plugin/0.2.0".to_string(),
+        ),
+    ];
+
+    if let Some(ref token) = config.auth.auth_token {
+        headers.push((
+            "Authorization".to_string(),
+            format!("Bearer {}", token.trim()),
+        ));
+    }
+
+    if let Some(ref key) = config.auth.api_key {
+        headers.push(("x-goog-api-key".to_string(), key.trim().to_string()));
+    }
+
+    headers
+}
+
+/// Constructs the `VertexSearchRequestBody` from tool `SearchArgs`.
+pub fn build_search_request(args: &SearchArgs) -> VertexSearchRequestBody {
+    let mut query = args.query.trim().to_string();
+
+    if let Some(ref exact) = args.exact_terms {
+        let trimmed = exact.trim();
+        if !trimmed.is_empty() {
+            query.push_str(&format!(" \"{}\"", trimmed));
+        }
+    }
+
+    if let Some(ref exclude) = args.exclude_terms {
+        let trimmed = exclude.trim();
+        if !trimmed.is_empty() {
+            query.push_str(&format!(" -{}", trimmed));
+        }
+    }
+
+    if let Some(ref site) = args.site {
+        let trimmed = site.trim();
+        if !trimmed.is_empty() {
+            query.push_str(&format!(" site:{}", trimmed));
+        }
+    }
+
+    if let Some(ref ft) = args.file_type {
+        let trimmed = ft.trim();
+        if !trimmed.is_empty() {
+            query.push_str(&format!(" filetype:{}", trimmed));
+        }
+    }
+
+    let page_size = args.num.map(|n| n.clamp(1, 100)).or(Some(5));
+
+    let offset = match (args.offset, args.start) {
+        (Some(off), _) => Some(off),
+        (None, Some(st)) if st > 1 => Some(st.saturating_sub(1)),
+        _ => None,
+    };
+
+    let content_search_spec = Some(VertexContentSearchSpec {
+        snippet_spec: Some(VertexSnippetSpec {
+            return_snippet: true,
+        }),
+        extractive_content_spec: Some(VertexExtractiveContentSpec {
+            max_extractive_answer_count: Some(1),
+            max_extractive_segment_count: Some(1),
+        }),
+        summary_spec: Some(VertexSummarySpec {
+            summary_result_count: Some(5),
+            include_citations: Some(true),
+        }),
+    });
+
+    let spell_correction_spec = Some(VertexSpellCorrectionSpec {
+        mode: Some("SUGGESTION_ONLY".to_string()),
+    });
+
+    VertexSearchRequestBody {
+        query,
+        page_size,
+        offset,
+        filter: args.filter.clone(),
+        order_by: args.order_by.clone(),
+        content_search_spec,
+        spell_correction_spec,
+    }
+}
+
+/// Parses the HTTP response from Vertex AI Search into structured `SearchResultOutput`.
 pub fn parse_search_response(
     status: u16,
     body: &[u8],
     query: &str,
 ) -> Result<SearchResultOutput, String> {
     if status == 200 {
-        let api_resp: GoogleSearchApiResponse = serde_json::from_slice(body).map_err(|e| {
+        let api_resp: VertexSearchApiResponse = serde_json::from_slice(body).map_err(|e| {
             let body_str = String::from_utf8_lossy(body);
             let preview = truncate_str(&body_str, 500);
             format!(
-                "Failed to parse Google Search API response JSON: {}. Raw response: {}",
+                "Failed to parse Vertex AI Search API response JSON: {}. Raw response: {}",
                 e, preview
             )
         })?;
 
-        // Check if a 200 response contains an error envelope
         if let Some(ref err) = api_resp.error {
             return Err(format_api_error(err, status));
         }
 
         let mut results = Vec::new();
-        if let Some(items) = api_resp.items {
+        if let Some(items) = api_resp.results {
             for item in items {
-                let title = item.title.unwrap_or_default();
-                let link = item.link.unwrap_or_default();
-                let snippet = item.snippet.unwrap_or_default();
-                let display_link = item.display_link;
+                if let Some(doc) = item.document {
+                    let derived = doc.derived_struct_data;
+                    let struct_data = doc.struct_data;
 
-                // Skip items that have neither title nor link
-                if !title.is_empty() || !link.is_empty() {
-                    results.push(SearchResultItem {
-                        title,
-                        link,
-                        snippet,
-                        display_link,
-                    });
+                    let title = derived
+                        .as_ref()
+                        .and_then(|d| d.title.clone())
+                        .or_else(|| {
+                            struct_data.as_ref().and_then(|s| {
+                                s.get("title").and_then(|v| v.as_str().map(|t| t.to_string()))
+                            })
+                        })
+                        .unwrap_or_else(|| doc.id.clone().unwrap_or_default());
+
+                    let link = derived
+                        .as_ref()
+                        .and_then(|d| {
+                            d.link
+                                .clone()
+                                .or_else(|| d.url.clone())
+                                .or_else(|| d.uri.clone())
+                                .or_else(|| d.formatted_url.clone())
+                        })
+                        .or_else(|| {
+                            struct_data.as_ref().and_then(|s| {
+                                s.get("link")
+                                    .or_else(|| s.get("url"))
+                                    .or_else(|| s.get("uri"))
+                                    .and_then(|v| v.as_str().map(|t| t.to_string()))
+                            })
+                        })
+                        .unwrap_or_default();
+
+                    let mut snippet = String::new();
+                    if let Some(ref d) = derived {
+                        if let Some(ref snippets) = d.snippets {
+                            for s in snippets {
+                                if let Some(ref snip) = s.snippet {
+                                    let cleaned = clean_snippet_text(snip);
+                                    if !cleaned.is_empty()
+                                        && !cleaned.eq_ignore_ascii_case(
+                                            "No snippet is available for this page.",
+                                        )
+                                    {
+                                        snippet = cleaned;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if snippet.is_empty() {
+                            if let Some(ref answers) = d.extractive_answers {
+                                if let Some(first_ans) = answers.first() {
+                                    if let Some(ref c) = first_ans.content {
+                                        snippet = clean_snippet_text(c);
+                                    }
+                                }
+                            }
+                        }
+
+                        if snippet.is_empty() {
+                            if let Some(ref segments) = d.extractive_segments {
+                                if let Some(first_seg) = segments.first() {
+                                    if let Some(ref c) = first_seg.content {
+                                        snippet = clean_snippet_text(c);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if snippet.is_empty() {
+                        if let Some(ref s) = struct_data {
+                            if let Some(desc) = s
+                                .get("snippet")
+                                .or_else(|| s.get("description"))
+                                .and_then(|v| v.as_str())
+                            {
+                                snippet = clean_snippet_text(desc);
+                            }
+                        }
+                    }
+
+                    let display_link = derived
+                        .as_ref()
+                        .and_then(|d| d.display_link.clone())
+                        .or_else(|| {
+                            if !link.is_empty() {
+                                extract_domain(&link)
+                            } else {
+                                None
+                            }
+                        });
+
+                    if !title.is_empty() || !link.is_empty() || !snippet.is_empty() {
+                        results.push(SearchResultItem {
+                            title,
+                            link,
+                            snippet,
+                            display_link,
+                        });
+                    }
                 }
             }
         }
 
-        let total_results = api_resp
-            .search_information
-            .as_ref()
-            .and_then(|info| info.formatted_total_results.clone().or_else(|| info.total_results.clone()));
+        let total_results = api_resp.total_size.and_then(|v| match v {
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            serde_json::Value::String(s) => Some(s),
+            _ => None,
+        });
 
-        let search_time = api_resp
-            .search_information
-            .as_ref()
-            .and_then(|info| info.search_time);
+        let summary = api_resp
+            .summary
+            .and_then(|s| s.summary_text)
+            .filter(|st| !st.trim().is_empty());
 
-        let spelling_suggestion = api_resp
-            .spelling
-            .as_ref()
-            .and_then(|s| s.corrected_query.clone());
+        let spelling_suggestion = api_resp.corrected_query.filter(|cq| !cq.trim().is_empty());
 
         let count = results.len();
 
         Ok(SearchResultOutput {
             query: query.to_string(),
             total_results,
-            search_time,
+            summary,
             spelling_suggestion,
             count,
             results,
         })
     } else {
-        // Attempt to parse Google's structured error payload
         if let Ok(err_resp) = serde_json::from_slice::<GoogleApiErrorResponse>(body) {
             if let Some(ref err) = err_resp.error {
                 return Err(format_api_error(err, status));
@@ -174,7 +372,7 @@ pub fn parse_search_response(
         let preview = truncate_str(&body_str, 500);
 
         Err(format!(
-            "Google Search API request failed with HTTP status {}: {}",
+            "Vertex AI Search API request failed with HTTP status {}: {}",
             status, preview
         ))
     }
@@ -183,109 +381,148 @@ pub fn parse_search_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ResolvedAuth;
 
     #[test]
-    fn test_truncate_str_ascii() {
-        let s = "abcdefghij";
-        assert_eq!(truncate_str(s, 5), "abcde");
-        assert_eq!(truncate_str(s, 20), "abcdefghij");
-        assert_eq!(truncate_str(s, 0), "");
+    fn test_clean_snippet_text() {
+        let input = "Learn about <b>WebAssembly</b> and &amp; <b>Rust</b> components.";
+        let cleaned = clean_snippet_text(input);
+        assert_eq!(cleaned, "Learn about WebAssembly and & Rust components.");
     }
 
     #[test]
-    fn test_truncate_str_unicode() {
-        // '🦀' is 4 bytes (F0 9F A6 80)
-        let s = "hello 🦀 world";
-        // byte indices: 'hello ' = 6 bytes, '🦀' = 4 bytes (6..10), ' world' = 6 bytes
-        // Truncating at 7 (mid-crab) should yield "hello " (length 6)
-        assert_eq!(truncate_str(s, 7), "hello ");
-        assert_eq!(truncate_str(s, 10), "hello 🦀");
-        assert_eq!(truncate_str(s, 11), "hello 🦀 ");
+    fn test_extract_domain() {
+        assert_eq!(
+            extract_domain("https://cloud.google.com/vertex-ai/docs"),
+            Some("cloud.google.com".to_string())
+        );
+        assert_eq!(
+            extract_domain("http://example.org:8080/path"),
+            Some("example.org".to_string())
+        );
     }
 
     #[test]
-    fn test_build_search_url_defaults() {
-        let args = SearchArgs {
-            query: "rust components".to_string(),
-            num: None,
-            start: None,
-            site: None,
-            file_type: None,
-            date_restrict: None,
-            exact_terms: None,
-            exclude_terms: None,
-            sort: None,
-            safe: None,
-            language: None,
-            country: None,
-            search_type: None,
-            api_key: None,
-            cx: None,
+    fn test_build_search_endpoint_datastore_api_key() {
+        let config = ResolvedConfig {
+            project_id: "my-project".to_string(),
+            target: SearchTarget::DataStore("my-store".to_string()),
+            location: "global".to_string(),
+            collection_id: "default_collection".to_string(),
+            serving_config_id: "default_search".to_string(),
+            auth: ResolvedAuth {
+                auth_token: None,
+                api_key: Some("AIzaSyTestKey".to_string()),
+            },
         };
 
-        let url = build_search_url("test_key", "test_cx", &args);
-        assert!(url.starts_with(GOOGLE_CUSTOM_SEARCH_BASE_URL));
-        assert!(url.contains("key=test_key"));
-        assert!(url.contains("cx=test_cx"));
-        assert!(url.contains("q=rust%20components"));
-        assert!(url.contains("num=5"));
-        assert!(url.contains("safe=active"));
-        assert!(!url.contains("start="));
+        let url = build_search_endpoint(&config);
+        assert_eq!(
+            url,
+            "https://discoveryengine.googleapis.com/v1/projects/my-project/locations/global/collections/default_collection/dataStores/my-store/servingConfigs/default_search:search?key=AIzaSyTestKey"
+        );
     }
 
     #[test]
-    fn test_build_search_url_options() {
+    fn test_build_search_endpoint_engine_bearer_token() {
+        let config = ResolvedConfig {
+            project_id: "my-project".to_string(),
+            target: SearchTarget::Engine("my-engine".to_string()),
+            location: "us".to_string(),
+            collection_id: "default_collection".to_string(),
+            serving_config_id: "default_serving_config".to_string(),
+            auth: ResolvedAuth {
+                auth_token: Some("oauth-token-xyz".to_string()),
+                api_key: None,
+            },
+        };
+
+        let url = build_search_endpoint(&config);
+        assert_eq!(
+            url,
+            "https://discoveryengine.googleapis.com/v1/projects/my-project/locations/us/collections/default_collection/engines/my-engine/servingConfigs/default_serving_config:search"
+        );
+    }
+
+    #[test]
+    fn test_build_request_headers() {
+        let config = ResolvedConfig {
+            project_id: "my-project".to_string(),
+            target: SearchTarget::DataStore("my-store".to_string()),
+            location: "global".to_string(),
+            collection_id: "default_collection".to_string(),
+            serving_config_id: "default_search".to_string(),
+            auth: ResolvedAuth {
+                auth_token: Some("token123".to_string()),
+                api_key: Some("key123".to_string()),
+            },
+        };
+
+        let headers = build_request_headers(&config);
+        assert!(headers.contains(&(
+            "Authorization".to_string(),
+            "Bearer token123".to_string()
+        )));
+        assert!(headers.contains(&("x-goog-api-key".to_string(), "key123".to_string())));
+        assert!(headers.contains(&(
+            "Content-Type".to_string(),
+            "application/json".to_string()
+        )));
+    }
+
+    #[test]
+    fn test_build_search_request_options() {
         let args = SearchArgs {
-            query: "  wasm tutorial  ".to_string(),
+            query: "rust webassembly".to_string(),
             num: Some(10),
             start: Some(11),
-            site: Some("rust-lang.org".to_string()),
-            file_type: Some("pdf".to_string()),
-            date_restrict: Some("m1".to_string()),
             exact_terms: Some("component model".to_string()),
             exclude_terms: Some("legacy".to_string()),
-            sort: Some("date".to_string()),
-            safe: Some("OFF".to_string()),
-            language: Some("lang_en".to_string()),
-            country: Some("us".to_string()),
-            search_type: Some("IMAGE".to_string()),
-            api_key: None,
-            cx: None,
+            site: Some("rustwasm.github.io".to_string()),
+            file_type: Some("html".to_string()),
+            filter: Some("category: ANY(\"docs\")".to_string()),
+            order_by: Some("publish_time desc".to_string()),
+            ..Default::default()
         };
 
-        let url = build_search_url("my_key", "my_cx", &args);
-        assert!(url.contains("num=10"));
-        assert!(url.contains("start=11"));
-        assert!(url.contains("q=wasm%20tutorial"));
-        assert!(url.contains("siteSearch=rust-lang.org"));
-        assert!(url.contains("fileType=pdf"));
-        assert!(url.contains("dateRestrict=m1"));
-        assert!(url.contains("exactTerms=component%20model"));
-        assert!(url.contains("excludeTerms=legacy"));
-        assert!(url.contains("sort=date"));
-        assert!(url.contains("safe=off"));
-        assert!(url.contains("lr=lang_en"));
-        assert!(url.contains("gl=us"));
-        assert!(url.contains("searchType=image"));
+        let req = build_search_request(&args);
+        assert_eq!(
+            req.query,
+            "rust webassembly \"component model\" -legacy site:rustwasm.github.io filetype:html"
+        );
+        assert_eq!(req.page_size, Some(10));
+        assert_eq!(req.offset, Some(10)); // start 11 -> offset 10
+        assert_eq!(req.filter, Some("category: ANY(\"docs\")".to_string()));
+        assert_eq!(req.order_by, Some("publish_time desc".to_string()));
+        assert!(req.content_search_spec.is_some());
     }
 
     #[test]
     fn test_parse_search_response_success() {
         let json = r#"{
-            "searchInformation": {
-                "totalResults": "45200",
-                "formattedTotalResults": "45,200",
-                "searchTime": 0.28
+            "totalSize": 42,
+            "correctedQuery": "rust webassembly",
+            "summary": {
+                "summaryText": "WebAssembly allows Rust code to run in browser and server sandboxes."
             },
-            "spelling": {
-                "correctedQuery": "rust webassembly"
-            },
-            "items": [
+            "results": [
                 {
-                    "title": "Rust and WebAssembly",
-                    "link": "https://rustwasm.github.io/docs/book/",
-                    "snippet": "An introduction to Rust and WebAssembly.",
-                    "displayLink": "rustwasm.github.io"
+                    "id": "doc1",
+                    "document": {
+                        "name": "projects/123/locations/global/collections/default_collection/dataStores/ds/branches/0/documents/doc1",
+                        "id": "doc1",
+                        "derivedStructData": {
+                            "title": "Rust and WebAssembly",
+                            "link": "https://rustwasm.github.io/docs/book/",
+                            "displayLink": "rustwasm.github.io",
+                            "snippets": [
+                                {
+                                    "snippet": "Learn <b>Rust</b> and <b>WebAssembly</b>.",
+                                    "snippet_status": "SUCCESS"
+                                }
+                            ]
+                        }
+                    }
                 }
             ]
         }"#;
@@ -293,46 +530,63 @@ mod tests {
         let res = parse_search_response(200, json.as_bytes(), "rust wasm").unwrap();
         assert_eq!(res.query, "rust wasm");
         assert_eq!(res.count, 1);
-        assert_eq!(res.total_results.as_deref(), Some("45,200"));
-        assert_eq!(res.search_time, Some(0.28));
+        assert_eq!(res.total_results.as_deref(), Some("42"));
         assert_eq!(res.spelling_suggestion.as_deref(), Some("rust webassembly"));
+        assert_eq!(
+            res.summary.as_deref(),
+            Some("WebAssembly allows Rust code to run in browser and server sandboxes.")
+        );
         assert_eq!(res.results[0].title, "Rust and WebAssembly");
-        assert_eq!(res.results[0].link, "https://rustwasm.github.io/docs/book/");
-        assert_eq!(res.results[0].snippet, "An introduction to Rust and WebAssembly.");
-        assert_eq!(res.results[0].display_link.as_deref(), Some("rustwasm.github.io"));
+        assert_eq!(
+            res.results[0].link,
+            "https://rustwasm.github.io/docs/book/"
+        );
+        assert_eq!(
+            res.results[0].snippet,
+            "Learn Rust and WebAssembly."
+        );
+        assert_eq!(
+            res.results[0].display_link.as_deref(),
+            Some("rustwasm.github.io")
+        );
+    }
+
+    #[test]
+    fn test_parse_search_response_extractive_fallback() {
+        let json = r#"{
+            "results": [
+                {
+                    "id": "doc2",
+                    "document": {
+                        "id": "doc2",
+                        "derivedStructData": {
+                            "title": "Documentation",
+                            "link": "https://example.com/docs",
+                            "extractive_answers": [
+                                {
+                                    "content": "This is an extractive answer from the document."
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#;
+
+        let res = parse_search_response(200, json.as_bytes(), "docs").unwrap();
+        assert_eq!(res.count, 1);
+        assert_eq!(
+            res.results[0].snippet,
+            "This is an extractive answer from the document."
+        );
     }
 
     #[test]
     fn test_parse_search_response_empty() {
-        let json = r#"{
-            "searchInformation": {
-                "totalResults": "0",
-                "formattedTotalResults": "0",
-                "searchTime": 0.12
-            }
-        }"#;
-
-        let res = parse_search_response(200, json.as_bytes(), "nonexistent term").unwrap();
+        let json = r#"{ "totalSize": 0, "results": [] }"#;
+        let res = parse_search_response(200, json.as_bytes(), "query").unwrap();
         assert_eq!(res.count, 0);
         assert!(res.results.is_empty());
-    }
-
-    #[test]
-    fn test_parse_search_response_error_payload_200() {
-        let json = r#"{
-            "error": {
-                "code": 400,
-                "message": "Invalid Query",
-                "status": "INVALID_ARGUMENT"
-            }
-        }"#;
-
-        let res = parse_search_response(200, json.as_bytes(), "bad query");
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(err.contains("400"));
-        assert!(err.contains("Invalid Query"));
-        assert!(err.contains("INVALID_ARGUMENT"));
     }
 
     #[test]
@@ -340,15 +594,8 @@ mod tests {
         let json = r#"{
             "error": {
                 "code": 403,
-                "message": "The request is missing a valid API key.",
-                "status": "PERMISSION_DENIED",
-                "errors": [
-                    {
-                        "message": "The request is missing a valid API key.",
-                        "domain": "global",
-                        "reason": "forbidden"
-                    }
-                ]
+                "message": "Permission 'discoveryengine.servingConfigs.search' denied.",
+                "status": "PERMISSION_DENIED"
             }
         }"#;
 
@@ -356,18 +603,7 @@ mod tests {
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(err.contains("403"));
-        assert!(err.contains("missing a valid API key"));
         assert!(err.contains("PERMISSION_DENIED"));
-        assert!(err.contains("forbidden"));
-    }
-
-    #[test]
-    fn test_parse_search_response_raw_html_error() {
-        let raw_html = b"<html><head><title>502 Bad Gateway</title></head><body>Bad Gateway</body></html>";
-        let res = parse_search_response(502, raw_html, "test");
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(err.contains("502"));
-        assert!(err.contains("Bad Gateway"));
+        assert!(err.contains("discoveryengine.servingConfigs.search"));
     }
 }

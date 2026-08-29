@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-This project is the **Google Search Tool Plugin** for **Carapace** (`carapace-plugin-google-search-tool`).
+This project is the **Google Vertex AI Search & Enterprise Web Search Plugin** for **Carapace** (`carapace-plugin-google-search-tool`).
 
-It provides Carapace agents with web and image search capabilities by implementing the `google_search` tool over the Google Custom Search JSON API.
+It provides Carapace agents with web, enterprise knowledge base, and website search capabilities by implementing the `google_search` tool over the Google Vertex AI Search & Discovery Engine REST API (`discoveryengine.googleapis.com`).
 
 ### What is Carapace?
 
@@ -28,9 +28,9 @@ It provides Carapace agents with web and image search capabilities by implementi
 
 - The repository provides a Nix flake ([`flake.nix`](flake.nix)) and [`.envrc`](.envrc) that define and automatically load the development shell with all required tooling (`cargo-component`, `wasm-tools`, `wit-bindgen`, Rust toolchain with `wasm32-wasip1` / `wasm32-unknown-unknown` targets, etc.).
 - When adding new tools, libraries, build dependencies, or compiler targets/extensions required by the project:
-  - Update [`flake.nix`](flake.nix) in the workspace root by adding new packages to `devShells.default.buildInputs` or configuring `rustToolchain`.
+  - Update [`flake.nix`](flake.nix) in the workspace root by adding new packages to `devShells.default.buildInputs` or configuring `rustToolchain`.\
   - Ensure any new or modified files are staged in Git (`git add flake.nix flake.lock`) so Nix can evaluate them in pure mode.
-  - Verify the shell evaluates and builds cleanly with `nix develop` or `direnv reload``.
+  - Verify the shell evaluates and builds cleanly with `nix develop` or `direnv reload`.
   - Always prefer maintaining dependencies declaratively in [`flake.nix`](flake.nix) over relying on unmanaged host-level installations.
 
 ## Architectural Constraints & Lessons Learned
@@ -45,7 +45,7 @@ It provides Carapace agents with web and image search capabilities by implementi
 ### 2. Pure Rust & Sandboxed HTTP Access
 
 - Plugins run in a sandboxed WASM environment without ambient host filesystem or socket syscalls.
-- Remote network operations (Google Custom Search API) execute over HTTP/HTTPS via `carapace:plugin/host::http-fetch`.
+- Remote network operations (Discovery Engine API) execute over HTTP/HTTPS via `carapace:plugin/host::http-fetch`.
 - Dependencies must be pure Rust without OS/libc dependencies (`serde` and `serde_json` with `alloc`, custom URL percent encoder).
 
 ### 3. Plugin Manifest ID & Artifact Naming
