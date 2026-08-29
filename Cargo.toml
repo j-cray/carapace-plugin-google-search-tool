@@ -3,7 +3,7 @@ name = "carapace-plugin-google-search-tool"
 version = "0.2.0"
 edition = "2021"
 authors = ["Jake Wray <jakewray@mailbox.org>"]
-description = "Carapace plugin providing Google Vertex AI Search and Enterprise Web Search capabilities"
+description = "Carapace plugin providing real-time global Google Web Search via Google Search Grounding"
 license = "Apache-2.0"
 
 [lib]

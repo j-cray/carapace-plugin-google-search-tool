@@ -1,4 +1,4 @@
-//! Types and data structures for Google Vertex AI Search tool and API responses.
+//! Types and data structures for Google Search Tool via Google Search Grounding.
 
 use serde::{Deserialize, Serialize};
 
@@ -8,304 +8,159 @@ pub struct SearchArgs {
     /// Search query string (required)
     pub query: String,
 
-    /// Number of search results to return (1-100, default 5)
+    /// Number of search results / sources to return (default: 5, max: 20)
     #[serde(default, alias = "page_size")]
     pub num: Option<u32>,
 
-    /// Index of first result to return (1-based index or 0-based offset, for pagination)
+    /// Gemini model to use for grounded web search (default: "gemini-2.5-flash")
     #[serde(default)]
-    pub start: Option<u32>,
+    pub model: Option<String>,
 
-    /// 0-based offset of results to return (alternative to start)
-    #[serde(default)]
-    pub offset: Option<u32>,
-
-    /// Google Cloud Project ID (can also be configured via credentials/config)
-    #[serde(default)]
-    pub project_id: Option<String>,
-
-    /// Vertex AI Search Data Store ID
-    #[serde(default, alias = "datastore_id", alias = "cx")]
-    pub data_store_id: Option<String>,
-
-    /// Vertex AI Search App / Engine ID (alternative to data_store_id)
-    #[serde(default, alias = "app_id")]
-    pub engine_id: Option<String>,
-
-    /// Google Cloud location / region (default: "global")
-    #[serde(default)]
-    pub location: Option<String>,
-
-    /// Vertex AI Search collection ID (default: "default_collection")
-    #[serde(default)]
-    pub collection_id: Option<String>,
-
-    /// Vertex AI Search serving config ID (default: "default_search")
-    #[serde(default, alias = "serving_config")]
-    pub serving_config_id: Option<String>,
-
-    /// Optional per-call Google Cloud API Key
+    /// Optional per-call Google Gemini / Google Cloud API Key
     #[serde(default)]
     pub api_key: Option<String>,
 
-    /// Optional per-call OAuth2 Access / Bearer Token
+    /// Optional per-call OAuth2 Bearer / access token (for Google Cloud Vertex AI)
     #[serde(default, alias = "access_token", alias = "bearer_token")]
     pub auth_token: Option<String>,
 
-    /// Filter expression for structured / metadata filtering
+    /// Optional Google Cloud Project ID (for Vertex AI endpoint)
     #[serde(default)]
-    pub filter: Option<String>,
+    pub project_id: Option<String>,
 
-    /// Order / sort expression (e.g. "publish_time desc")
-    #[serde(default, alias = "sort")]
-    pub order_by: Option<String>,
+    /// Optional Google Cloud region / location (default: "us-central1" for Vertex AI)
+    #[serde(default)]
+    pub location: Option<String>,
 
-    /// Restrict search to a specific site or domain (appended as site: query filter)
+    /// Restrict search to a specific site or domain (e.g. 'docs.rs' or 'github.com')
     #[serde(default)]
     pub site: Option<String>,
 
-    /// Restrict results to files with specified extension (appended as filetype: query filter)
-    #[serde(default)]
-    pub file_type: Option<String>,
-
-    /// Phrase that all documents in the search results must contain
+    /// Phrase that search results should contain
     #[serde(default)]
     pub exact_terms: Option<String>,
 
-    /// Word or phrase that should not appear in any documents in search results
+    /// Word or phrase to exclude from search results
     #[serde(default)]
     pub exclude_terms: Option<String>,
-
-    /// SafeSearch filter level ("active" or "off")
-    #[serde(default)]
-    pub safe: Option<String>,
-
-    /// Language restriction code (e.g. "en")
-    #[serde(default)]
-    pub language: Option<String>,
 }
 
-/// JSON request body sent to Vertex AI Search `servingConfigs.search`.
+/// JSON request body for Google AI Studio / Gemini generateContent with search grounding.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct VertexSearchRequestBody {
-    /// The search query
-    pub query: String,
-
-    /// Number of results per page
-    #[serde(rename = "pageSize", skip_serializing_if = "Option::is_none")]
-    pub page_size: Option<u32>,
-
-    /// 0-based offset for pagination
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<u32>,
-
-    /// Filter expression
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<String>,
-
-    /// Order expression
-    #[serde(rename = "orderBy", skip_serializing_if = "Option::is_none")]
-    pub order_by: Option<String>,
-
-    /// Content search specifications (snippets, summary, extractive answers)
-    #[serde(rename = "contentSearchSpec", skip_serializing_if = "Option::is_none")]
-    pub content_search_spec: Option<VertexContentSearchSpec>,
-
-    /// Spell correction specifications
-    #[serde(rename = "spellCorrectionSpec", skip_serializing_if = "Option::is_none")]
-    pub spell_correction_spec: Option<VertexSpellCorrectionSpec>,
+pub struct GeminiAiStudioRequestBody {
+    pub contents: Vec<GeminiContent>,
+    pub tools: Vec<GeminiAiStudioTool>,
 }
 
-/// Content search specifications for Vertex AI Search.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
-pub struct VertexContentSearchSpec {
-    /// Snippet extraction configuration
-    #[serde(rename = "snippetSpec", skip_serializing_if = "Option::is_none")]
-    pub snippet_spec: Option<VertexSnippetSpec>,
-
-    /// Extractive content configuration
-    #[serde(rename = "extractiveContentSpec", skip_serializing_if = "Option::is_none")]
-    pub extractive_content_spec: Option<VertexExtractiveContentSpec>,
-
-    /// Generative summary configuration
-    #[serde(rename = "summarySpec", skip_serializing_if = "Option::is_none")]
-    pub summary_spec: Option<VertexSummarySpec>,
+/// Tool spec for Google AI Studio grounding.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct GeminiAiStudioTool {
+    pub google_search: serde_json::Value,
 }
 
-/// Snippet extraction specification.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
-pub struct VertexSnippetSpec {
-    /// Whether to return snippets for matching documents
-    #[serde(rename = "returnSnippet")]
-    pub return_snippet: bool,
+/// JSON request body for Vertex AI generateContent with search grounding.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct VertexAiRequestBody {
+    pub contents: Vec<GeminiContent>,
+    pub tools: Vec<VertexAiTool>,
 }
 
-/// Extractive content specification.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
-pub struct VertexExtractiveContentSpec {
-    /// Maximum number of extractive answers
-    #[serde(rename = "maxExtractiveAnswerCount", skip_serializing_if = "Option::is_none")]
-    pub max_extractive_answer_count: Option<u32>,
-
-    /// Maximum number of extractive segments
-    #[serde(rename = "maxExtractiveSegmentCount", skip_serializing_if = "Option::is_none")]
-    pub max_extractive_segment_count: Option<u32>,
+/// Tool spec for Vertex AI grounding.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct VertexAiTool {
+    #[serde(rename = "googleSearch")]
+    pub google_search: serde_json::Value,
 }
 
-/// Generative summary specification.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
-pub struct VertexSummarySpec {
-    /// Number of top search results to summarize
-    #[serde(rename = "summaryResultCount", skip_serializing_if = "Option::is_none")]
-    pub summary_result_count: Option<u32>,
-
-    /// Whether to include citations in the summary
-    #[serde(rename = "includeCitations", skip_serializing_if = "Option::is_none")]
-    pub include_citations: Option<bool>,
-}
-
-/// Spell correction specification.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
-pub struct VertexSpellCorrectionSpec {
-    /// Spell correction mode ("SUGGESTION_ONLY" or "AUTO")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
-}
-
-/// Raw Vertex AI Search / Discovery Engine JSON response.
+/// Content object containing role and parts.
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
-pub struct VertexSearchApiResponse {
-    /// Search result items
+pub struct GeminiContent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    pub parts: Vec<GeminiPart>,
+}
+
+/// Individual part inside content.
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+pub struct GeminiPart {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// Root JSON response from Gemini generateContent with search grounding.
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
+pub struct GeminiGenerateContentResponse {
     #[serde(default)]
-    pub results: Option<Vec<VertexSearchResult>>,
-
-    /// Total matching results count (can be integer or string)
-    #[serde(default, rename = "totalSize")]
-    pub total_size: Option<serde_json::Value>,
-
-    /// Suggested spelling correction
-    #[serde(default, rename = "correctedQuery")]
-    pub corrected_query: Option<String>,
-
-    /// Next page token for pagination
-    #[serde(default, rename = "nextPageToken")]
-    pub next_page_token: Option<String>,
-
-    /// Generative summary if requested
-    #[serde(default)]
-    pub summary: Option<VertexSearchSummary>,
-
-    /// Error payload (if returned in 200/error envelope)
+    pub candidates: Option<Vec<GeminiCandidate>>,
     #[serde(default)]
     pub error: Option<GoogleApiErrorPayload>,
 }
 
-/// A single search result item returned by Vertex AI Search.
+/// Candidate item in Gemini response.
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
-pub struct VertexSearchResult {
-    /// Result ID
+pub struct GeminiCandidate {
     #[serde(default)]
-    pub id: Option<String>,
-
-    /// Document data
-    #[serde(default)]
-    pub document: Option<VertexDocument>,
+    pub content: Option<GeminiContent>,
+    #[serde(default, rename = "groundingMetadata")]
+    pub grounding_metadata: Option<GeminiGroundingMetadata>,
 }
 
-/// Document object inside Vertex AI Search result.
+/// Grounding metadata containing web search queries and source chunks.
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
-pub struct VertexDocument {
-    /// Full resource name of the document
-    #[serde(default)]
-    pub name: Option<String>,
-
-    /// Document ID
-    #[serde(default)]
-    pub id: Option<String>,
-
-    /// Derived structured data populated by Vertex AI Search crawler/indexer
-    #[serde(default, rename = "derivedStructData")]
-    pub derived_struct_data: Option<VertexDerivedStructData>,
-
-    /// User-provided structured data if available
-    #[serde(default, rename = "structData")]
-    pub struct_data: Option<serde_json::Value>,
+pub struct GeminiGroundingMetadata {
+    #[serde(default, rename = "webSearchQueries")]
+    pub web_search_queries: Option<Vec<String>>,
+    #[serde(default, rename = "groundingChunks")]
+    pub grounding_chunks: Option<Vec<GeminiGroundingChunk>>,
+    #[serde(default, rename = "groundingSupports")]
+    pub grounding_supports: Option<Vec<GeminiGroundingSupport>>,
+    #[serde(default, rename = "searchEntryPoint")]
+    pub search_entry_point: Option<GeminiSearchEntryPoint>,
 }
 
-/// Derived struct data inside Vertex AI document.
-#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
-pub struct VertexDerivedStructData {
-    /// Title of the document / webpage
+/// Grounding source chunk.
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+pub struct GeminiGroundingChunk {
     #[serde(default)]
-    pub title: Option<String>,
+    pub web: Option<GeminiWebChunk>,
+}
 
-    /// Link / URL to the document / webpage
-    #[serde(default)]
-    pub link: Option<String>,
-
-    /// Alternative URI field
+/// Web chunk containing page URI and Title.
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+pub struct GeminiWebChunk {
     #[serde(default)]
     pub uri: Option<String>,
-
-    /// Alternative URL field
     #[serde(default)]
-    pub url: Option<String>,
-
-    /// Display link / domain
-    #[serde(default, rename = "displayLink")]
-    pub display_link: Option<String>,
-
-    /// Formatted URL
-    #[serde(default, rename = "formattedUrl")]
-    pub formatted_url: Option<String>,
-
-    /// Extracted snippets
-    #[serde(default)]
-    pub snippets: Option<Vec<VertexSnippetItem>>,
-
-    /// Extractive answers
-    #[serde(default, rename = "extractive_answers")]
-    pub extractive_answers: Option<Vec<VertexExtractiveItem>>,
-
-    /// Extractive segments
-    #[serde(default, rename = "extractive_segments")]
-    pub extractive_segments: Option<Vec<VertexExtractiveItem>>,
+    pub title: Option<String>,
 }
 
-/// Snippet object inside derived struct data.
-#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
-pub struct VertexSnippetItem {
-    /// Snippet text
+/// Grounding support mapping text segments to chunk indices.
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
+pub struct GeminiGroundingSupport {
+    #[serde(default, rename = "groundingChunkIndices")]
+    pub grounding_chunk_indices: Option<Vec<usize>>,
+    #[serde(default, rename = "confidenceScores")]
+    pub confidence_scores: Option<Vec<f64>>,
     #[serde(default)]
-    pub snippet: Option<String>,
-
-    /// Snippet status (e.g. "SUCCESS", "NO_SNIPPET_AVAILABLE")
-    #[serde(default, rename = "snippet_status")]
-    pub snippet_status: Option<String>,
+    pub segment: Option<GeminiSegment>,
 }
 
-/// Extractive answer / segment item.
+/// Segment of text supported by grounding sources.
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
-pub struct VertexExtractiveItem {
-    /// Extracted content
+pub struct GeminiSegment {
+    #[serde(default, rename = "startIndex")]
+    pub start_index: Option<usize>,
+    #[serde(default, rename = "endIndex")]
+    pub end_index: Option<usize>,
     #[serde(default)]
-    pub content: Option<String>,
-
-    /// Page number
-    #[serde(default, rename = "pageNumber")]
-    pub page_number: Option<String>,
+    pub text: Option<String>,
 }
 
-/// Summary object returned by Vertex AI Search.
+/// Search entry point metadata.
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
-pub struct VertexSearchSummary {
-    /// Generated summary text
-    #[serde(default, rename = "summaryText")]
-    pub summary_text: Option<String>,
-
-    /// Whether summary generation was skipped
-    #[serde(default, rename = "summarySkipped")]
-    pub summary_skipped: Option<bool>,
+pub struct GeminiSearchEntryPoint {
+    #[serde(default, rename = "renderedContent")]
+    pub rendered_content: Option<String>,
 }
 
 /// Google API Error envelope returned on HTTP error statuses.
@@ -318,23 +173,14 @@ pub struct GoogleApiErrorResponse {
 /// Detailed error payload from Google API.
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct GoogleApiErrorPayload {
-    /// HTTP error status code
     #[serde(default)]
     pub code: Option<u16>,
-
-    /// Error message
     #[serde(default)]
     pub message: Option<String>,
-
-    /// Error status string (e.g. "PERMISSION_DENIED", "INVALID_ARGUMENT")
     #[serde(default)]
     pub status: Option<String>,
-
-    /// List of detailed error objects
     #[serde(default)]
     pub errors: Option<Vec<GoogleApiErrorItem>>,
-
-    /// Details array from Google RPC error
     #[serde(default)]
     pub details: Option<Vec<serde_json::Value>>,
 }
@@ -356,35 +202,31 @@ pub struct SearchResultOutput {
     /// The query that was searched
     pub query: String,
 
-    /// Total search results estimated by Vertex AI Search
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_results: Option<String>,
-
-    /// Generative summary if produced by Vertex AI Search
+    /// Comprehensive grounded answer synthesized from the live web
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
 
-    /// Suggested spelling correction if query had typos
+    /// Live Google web search queries executed
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub spelling_suggestion: Option<String>,
+    pub search_queries: Option<Vec<String>>,
 
-    /// Number of results returned in this response
+    /// Number of web source citations returned
     pub count: usize,
 
-    /// List of formatted search result items
+    /// List of formatted search result sources from the whole web
     pub results: Vec<SearchResultItem>,
 }
 
 /// Formatted individual result item.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SearchResultItem {
-    /// Title of the webpage or result
+    /// Title of the webpage or resource
     pub title: String,
 
     /// URL link to the page
     pub link: String,
 
-    /// Summary snippet or extractive content of the page
+    /// Excerpt or supported fact from the page
     pub snippet: String,
 
     /// Domain display link

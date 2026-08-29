@@ -1,7 +1,7 @@
 //! Carapace Google Search Tool Plugin.
 //!
 //! Provides the `google_search` tool to Carapace via the WebAssembly Component Model
-//! backed by Google Vertex AI Search / Google Enterprise Web Search (Discovery Engine API).
+//! backed by Google Search Grounding over Google AI Studio & Google Cloud Vertex AI.
 
 #[cfg(target_arch = "wasm32")]
 #[allow(warnings)]
@@ -30,47 +30,36 @@ pub mod types;
 pub mod url_encoder;
 
 pub const PLUGIN_ID: &str = "google-search-tool";
-pub const PLUGIN_NAME: &str = "Google Vertex AI Search Tool";
+pub const PLUGIN_NAME: &str = "Google Search Tool";
 pub const PLUGIN_DESCRIPTION: &str =
-    "Search web or enterprise content using Google Vertex AI Search / Google Enterprise Web Search (Discovery Engine API)";
+    "Search the entire public web using Google Search Grounding (Google AI Studio & Vertex AI)";
 pub const PLUGIN_VERSION: &str = "0.2.0";
 
 /// Manifest JSON embedded in the WASM binary custom section.
 pub const MANIFEST_JSON: &str = r#"{
   "id": "google-search-tool",
-  "name": "Google Vertex AI Search Tool",
-  "description": "Search web or enterprise content using Google Vertex AI Search / Google Enterprise Web Search (Discovery Engine API)",
+  "name": "Google Search Tool",
+  "description": "Search the entire public web using Google Search Grounding (Google AI Studio & Vertex AI)",
   "version": "0.2.0",
   "kind": "tool",
   "permissions": {
     "http": {
       "allowed_urls": [
-        "https://discoveryengine.googleapis.com/**",
-        "https://*.discoveryengine.googleapis.com/**"
+        "https://generativelanguage.googleapis.com/**",
+        "https://*.generativelanguage.googleapis.com/**",
+        "https://aiplatform.googleapis.com/**",
+        "https://*-aiplatform.googleapis.com/**",
+        "https://discoveryengine.googleapis.com/**"
       ]
     },
     "credentials": {
       "allowed_keys": [
-        "project_id",
-        "project-id",
-        "project",
-        "gcp_project",
-        "data_store_id",
-        "data-store-id",
-        "datastore_id",
-        "datastore",
-        "engine_id",
-        "engine-id",
-        "engine",
-        "app_id",
-        "app-id",
-        "location",
-        "collection",
-        "collection_id",
-        "serving_config",
-        "serving_config_id",
         "api_key",
         "api-key",
+        "gemini_api_key",
+        "gemini-api-key",
+        "google_api_key",
+        "google-api-key",
         "key",
         "auth_token",
         "auth-token",
@@ -79,8 +68,16 @@ pub const MANIFEST_JSON: &str = r#"{
         "bearer_token",
         "bearer-token",
         "token",
-        "cx",
-        "search_engine_id",
+        "project_id",
+        "project-id",
+        "project",
+        "gcp_project",
+        "gcp_project_id",
+        "location",
+        "region",
+        "model",
+        "model_id",
+        "model-id",
         "*"
       ]
     }

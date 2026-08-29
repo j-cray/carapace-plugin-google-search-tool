@@ -1,87 +1,61 @@
 # carapace-plugin-google-search-tool
 
-A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremachinery/carapace) that provides agents with Google Web, Website, and Enterprise Search capabilities via the Google Cloud Vertex AI Search & Discovery Engine REST API (`discoveryengine.googleapis.com`).
+A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremachinery/carapace) that provides agents with **real-time Google Web Search across the entire public internet** via Google Search Grounding (Google AI Studio & Google Cloud Vertex AI).
 
 ---
 
 ## Features
 
-- **Vertex AI Search & Enterprise Web Search**: Exposes the `google_search` tool to LLMs running in Carapace backed by Google Cloud Vertex AI Search.
-- **Website & Data Store Indexing**: Connects to Vertex AI Website Data Stores (public and domain-verified websites) or Enterprise Search Apps.
-- **Generative Summaries & Snippets**: Returns AI-generated summaries, extracted snippets with highlighted keywords, and spelling corrections alongside structured search results.
-- **Rich Query Parameters**: Supports query customization including result count (`num`/`page_size`), pagination (`start`/`offset`), domain filtering (`site`), file types (`file_type`), exact phrase matching (`exact_terms`), exclusion terms (`exclude_terms`), structured filters (`filter`), and sorting (`order_by`/`sort`).
-- **Flexible Credential Resolution**: Automatically resolves Google Cloud Project ID, Data Store / Engine ID, and authentication (API Key or OAuth2 Bearer Token) from Carapace Credential Store, gateway configuration (`carapace.json`), or per-call parameters.
-- **Sandboxed & Pure WebAssembly**: Targets `wasm32-unknown-unknown` without ambient WASI preview dependencies, running fully within Carapace's memory and capability sandbox.
-- **Granular Security Permissions**: Declares precise HTTP URL allowlists and credential scopes in the embedded plugin manifest.
+- **Whole-Web Search**: Searches Google's entire global public index in real time with **zero domain restrictions** or manual indexing required.
+- **Synthesized Answers & Live Citations**: Returns comprehensive answers grounded in live web results, search queries, page titles, URLs, and supported snippets.
+- **Simple 1-Minute Setup**: Works out of the box with a standard Gemini API Key from Google AI Studio (`aistudio.google.com`). No complex GCP cloud projects or custom search engines required.
+- **Enterprise Vertex AI Support**: Also supports enterprise Google Cloud Vertex AI projects using GCP Project ID and OAuth2 Bearer tokens or API keys.
+- **Rich Query Options**: Supports citation limits (`num`/`page_size`), domain filtering (`site`), exact phrase matching (`exact_terms`), exclusion terms (`exclude_terms`), and model selection (`model`, default: `gemini-2.5-flash`).
+- **Sandboxed WebAssembly**: Built for `wasm32-unknown-unknown` running under Carapace's capability-based sandbox with strict HTTP allowlisting and credential isolation.
 
 ---
 
-## Authentication & Prerequisites
+## Quick Setup (1-Minute)
 
-To use this plugin with Google Vertex AI Search:
+### 1. Get a Gemini API Key
 
-1. **Google Cloud Project**: An active GCP project linked to billing with the **Discovery Engine API** (`discoveryengine.googleapis.com`) enabled.
-2. **Vertex AI Search Data Store or App**: A website or unstructured data store configured in Vertex AI Agent Builder.
-3. **Authentication**: An **API Key** or **OAuth2 Access Token** (`auth_token`).
+1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Click **Create API Key**.
 
-### 1. Enable Discovery Engine API in Google Cloud
+### 2. Configure Credentials in Carapace
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2. Select your project and navigate to **APIs & Services > Library**.
-3. Search for and enable **Discovery Engine API** (or run `gcloud services enable discoveryengine.googleapis.com`).
-
-### 2. Create a Website Data Store or Search App
-
-1. In Google Cloud Console, open **Vertex AI Agent Builder** (or **Search & Conversation** / **Vertex AI Search**).
-2. Navigate to **Data Stores** > **Create Data Store**.
-3. Select **Website content**:
-   - Enter the target sites/domains to index (e.g. `docs.rs/*`, `github.com/*`, or your documentation websites).
-   - Choose location (default: `global`) and set a **Data Store ID** (e.g. `my-web-store`).
-4. (Optional) Create a **Search App** attaching the data store if you wish to use an App / Engine ID.
-
-### 3. Get Credentials
-
-- **API Key (Quickest)**: Create an API key in **APIs & Services > Credentials** and optionally restrict it to the _Discovery Engine API_.
-- **OAuth2 Token / Service Account (Enterprise)**: Use an access token generated from `gcloud auth print-access-token` or a service account with the _Discovery Engine Viewer_ role.
-
----
-
-## Configuration in Carapace
-
-You can supply credentials using either Carapace's credential store or the `carapace.json` configuration file:
-
-### Option A: Carapace Credential Store (Recommended)
+Set your API key using the Carapace CLI:
 
 ```bash
-# Set your Google Cloud Project ID
-carapace credentials set google-search-tool:project_id "<YOUR_GCP_PROJECT_ID>"
-
-# Set your Vertex AI Data Store ID (or engine_id)
-carapace credentials set google-search-tool:data_store_id "<YOUR_DATA_STORE_ID>"
-
-# Set your API Key (or auth_token)
-carapace credentials set google-search-tool:api_key "<YOUR_GOOGLE_API_KEY>"
+carapace config set google-search-tool:api_key "<YOUR_GEMINI_API_KEY>"
 ```
 
-_Note: If using OAuth2 tokens instead of an API key, set `auth_token` instead:_
-
-```bash
-carapace credentials set google-search-tool:auth_token "<YOUR_BEARER_TOKEN>"
-```
-
-### Option B: Carapace Configuration File (`carapace.json`)
+_(Alternatively, add it to your `carapace.json`)_:
 
 ```json
 {
   "plugins": {
     "google-search-tool": {
-      "project_id": "my-gcp-project-12345",
-      "data_store_id": "my-web-store",
-      "api_key": "AIzaSy...",
-      "location": "global"
+      "api_key": "AIzaSy..."
     }
   }
 }
+```
+
+That's it! Your Carapace agents can now search the entire web using `google_search`.
+
+---
+
+## Enterprise Setup (Google Cloud Vertex AI)
+
+If you prefer to route requests through an enterprise Google Cloud Vertex AI project:
+
+```bash
+# Set your Google Cloud Project ID
+carapace credentials set google-search-tool:project_id "<YOUR_GCP_PROJECT_ID>"
+
+# Set your OAuth2 Bearer token (or Vertex-enabled API key)
+carapace credentials set google-search-tool:auth_token "<YOUR_ACCESS_TOKEN>"
 ```
 
 ---
@@ -90,48 +64,39 @@ carapace credentials set google-search-tool:auth_token "<YOUR_BEARER_TOKEN>"
 
 ### Parameters
 
-| Parameter           | Type      | Required | Default                | Description                                                          |
-| :------------------ | :-------- | :------- | :--------------------- | :------------------------------------------------------------------- |
-| `query`             | `string`  | **Yes**  | —                      | Search keywords or query string.                                     |
-| `num` / `page_size` | `integer` | No       | `5`                    | Number of results to return (`1`–`100`).                             |
-| `start`             | `integer` | No       | `1`                    | 1-based index of first result for pagination.                        |
-| `offset`            | `integer` | No       | `0`                    | 0-based offset for pagination.                                       |
-| `site`              | `string`  | No       | —                      | Restrict results to a domain (e.g. `docs.rs` or `github.com`).       |
-| `file_type`         | `string`  | No       | —                      | Restrict results by file extension (e.g. `pdf`, `html`).             |
-| `exact_terms`       | `string`  | No       | —                      | Phrase that all documents in search results must contain.            |
-| `exclude_terms`     | `string`  | No       | —                      | Word or phrase that should not appear in search results.             |
-| `filter`            | `string`  | No       | —                      | Filter expression for structured metadata attributes.                |
-| `order_by` / `sort` | `string`  | No       | —                      | Order expression to apply to the results (e.g. `publish_time desc`). |
-| `project_id`        | `string`  | No       | Config                 | Optional per-invocation Google Cloud Project ID override.            |
-| `data_store_id`     | `string`  | No       | Config                 | Optional per-invocation Data Store ID override.                      |
-| `engine_id`         | `string`  | No       | Config                 | Optional per-invocation Engine/App ID override.                      |
-| `location`          | `string`  | No       | `"global"`             | Google Cloud region / location (e.g. `global`, `us`, `eu`).          |
-| `collection_id`     | `string`  | No       | `"default_collection"` | Collection ID override.                                              |
-| `serving_config_id` | `string`  | No       | `"default_search"`     | Serving configuration ID override.                                   |
-| `api_key`           | `string`  | No       | Config                 | Optional per-invocation API key override.                            |
-| `auth_token`        | `string`  | No       | Config                 | Optional per-invocation Bearer token override.                       |
+| Parameter           | Type      | Required | Default              | Description                                                    |
+| :------------------ | :-------- | :------- | :------------------- | :------------------------------------------------------------- |
+| `query`             | `string`  | **Yes**  | —                    | Search keywords or question to search across the entire web.   |
+| `num` / `page_size` | `integer` | No       | `5`                  | Maximum number of web citation sources to return (`1`–`20`).   |
+| `model`             | `string`  | No       | `"gemini-2.5-flash"` | Gemini model used for grounded search retrieval.               |
+| `site`              | `string`  | No       | —                    | Optional domain filter (e.g. `docs.rs` or `github.com`).       |
+| `exact_terms`       | `string`  | No       | —                    | Phrase that all search results must contain.                   |
+| `exclude_terms`     | `string`  | No       | —                    | Word or phrase that should not appear in search results.       |
+| `api_key`           | `string`  | No       | Config               | Optional per-invocation API key override.                      |
+| `auth_token`        | `string`  | No       | Config               | Optional per-invocation Bearer token override for Vertex AI.   |
+| `project_id`        | `string`  | No       | Config               | Optional per-invocation Google Cloud Project ID for Vertex AI. |
+| `location`          | `string`  | No       | `"us-central1"`      | Google Cloud region for Vertex AI.                             |
 
-### Example Tool Result
+### Example Tool Output
 
 ```json
 {
-  "query": "rust webassembly component model",
-  "total_results": "120",
-  "summary": "WebAssembly Components in Rust allow building modular, interoperable WASM modules using wit-bindgen.",
-  "spelling_suggestion": null,
+  "query": "latest rust releases and webassembly component model updates",
+  "summary": "Rust 1.85 was recently released with async closures, standard library stabilization, and enhanced WebAssembly Component Model support with wit-bindgen 0.36.",
+  "search_queries": ["rust 1.85 release notes webassembly component model"],
   "count": 2,
   "results": [
     {
-      "title": "WebAssembly Components in Rust",
-      "link": "https://component-model.bytecodealliance.org/language-support/rust.html",
-      "snippet": "Learn how to build WebAssembly components in Rust using wit-bindgen and cargo-component.",
-      "display_link": "component-model.bytecodealliance.org"
+      "title": "Announcing Rust 1.85.0 | Rust Blog",
+      "link": "https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html",
+      "snippet": "Rust 1.85.0 includes stabilization of async closures and updated wasm targets.",
+      "display_link": "blog.rust-lang.org"
     },
     {
-      "title": "Rust and WebAssembly",
-      "link": "https://rustwasm.github.io/docs/book/",
-      "snippet": "This book is for anyone interested in compiling Rust to WebAssembly.",
-      "display_link": "rustwasm.github.io"
+      "title": "WebAssembly Component Model in Rust",
+      "link": "https://component-model.bytecodealliance.org/language-support/rust.html",
+      "snippet": "Learn how to build WebAssembly components in Rust with cargo-component.",
+      "display_link": "component-model.bytecodealliance.org"
     }
   ]
 }
@@ -147,20 +112,14 @@ carapace credentials set google-search-tool:auth_token "<YOUR_BEARER_TOKEN>"
 
 ### Build the WASM Plugin Component
 
-Enter the Nix environment and run the build script:
-
 ```bash
 nix develop
 ./build.sh
-```
-
-Or run via make:
-
-```bash
+# or
 make build
 ```
 
-This generates `google-search-tool.wasm` in the root directory.
+This compiles and packages `google-search-tool.wasm`.
 
 ### Run Unit and Integration Tests
 

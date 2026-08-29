@@ -1,14 +1,14 @@
-//! Google Vertex AI Search tool implementation.
+//! Google Search tool implementation with Google Search Grounding across the whole web.
 
 use crate::client::{
-    build_request_headers, build_search_endpoint, build_search_request, parse_search_response,
+    build_request_body_json, build_request_headers, build_search_endpoint, parse_search_response,
 };
 use crate::config::resolve_full_config_with;
 use crate::types::SearchArgs;
 
 pub const TOOL_NAME: &str = "google_search";
 pub const TOOL_DESCRIPTION: &str =
-    "Search web or enterprise data using Google Vertex AI Search / Google Enterprise Web Search (Discovery Engine API). Returns relevant search results with titles, snippets, URLs, summaries, and metadata.";
+    "Search the entire public web using Google Search. Returns real-time search results, grounded summaries, search queries, and source citations.";
 
 /// Returns the JSON Schema string describing the tool's expected input parameters.
 pub fn tool_input_schema() -> String {
@@ -17,93 +17,51 @@ pub fn tool_input_schema() -> String {
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The search query string to execute with Vertex AI Search."
+                "description": "The search query string to search across the entire public web."
             },
             "num": {
                 "type": "integer",
-                "description": "Number of search results to return (1-100, default 5).",
+                "description": "Maximum number of web search result citations to return (1-20, default 5).",
                 "minimum": 1,
-                "maximum": 100
+                "maximum": 20
             },
             "page_size": {
                 "type": "integer",
-                "description": "Alias for num. Number of search results to return (1-100, default 5).",
+                "description": "Alias for num. Maximum number of web search result citations to return (1-20, default 5).",
                 "minimum": 1,
-                "maximum": 100
+                "maximum": 20
             },
-            "start": {
-                "type": "integer",
-                "description": "1-based index of the first result to return, for pagination.",
-                "minimum": 1
-            },
-            "offset": {
-                "type": "integer",
-                "description": "0-based offset of the results to return, for pagination.",
-                "minimum": 0
+            "model": {
+                "type": "string",
+                "description": "Gemini model to use for grounded web search (default 'gemini-2.5-flash')."
             },
             "site": {
                 "type": "string",
-                "description": "Restrict search results to a specific domain (e.g. 'docs.rs' or 'github.com')."
-            },
-            "file_type": {
-                "type": "string",
-                "description": "Restrict results to a specific file extension (e.g., 'pdf', 'html', 'json')."
+                "description": "Restrict search to a specific domain (e.g. 'docs.rs' or 'github.com')."
             },
             "exact_terms": {
                 "type": "string",
-                "description": "Identifies a phrase that all documents in the search results must contain."
+                "description": "Identifies a phrase that all search results must contain."
             },
             "exclude_terms": {
                 "type": "string",
-                "description": "Identifies a word or phrase that should not appear in any documents in the search results."
-            },
-            "filter": {
-                "type": "string",
-                "description": "Filter expression applied to structured metadata attributes."
-            },
-            "order_by": {
-                "type": "string",
-                "description": "The ordering expression to apply to the results (e.g. 'publish_time desc')."
-            },
-            "sort": {
-                "type": "string",
-                "description": "Alias for order_by."
-            },
-            "project_id": {
-                "type": "string",
-                "description": "Optional Google Cloud Project ID override."
-            },
-            "data_store_id": {
-                "type": "string",
-                "description": "Optional Vertex AI Search Data Store ID override."
-            },
-            "engine_id": {
-                "type": "string",
-                "description": "Optional Vertex AI Search App / Engine ID override."
-            },
-            "location": {
-                "type": "string",
-                "description": "Google Cloud location / region override (default 'global')."
-            },
-            "collection_id": {
-                "type": "string",
-                "description": "Vertex AI Search collection ID override (default 'default_collection')."
-            },
-            "serving_config_id": {
-                "type": "string",
-                "description": "Vertex AI Search serving config ID override (default 'default_search')."
+                "description": "Identifies a word or phrase that should not appear in search results."
             },
             "api_key": {
                 "type": "string",
-                "description": "Optional Google Cloud API Key override."
+                "description": "Optional Gemini / Google Cloud API Key override."
             },
             "auth_token": {
                 "type": "string",
-                "description": "Optional OAuth2 Bearer / access token override."
+                "description": "Optional OAuth2 Bearer / access token override for Vertex AI."
             },
-            "cx": {
+            "project_id": {
                 "type": "string",
-                "description": "Legacy Search Engine ID override (mapped to data_store_id)."
+                "description": "Optional Google Cloud Project ID override for Vertex AI."
+            },
+            "location": {
+                "type": "string",
+                "description": "Google Cloud location / region for Vertex AI (default 'us-central1')."
             }
         },
         "required": ["query"],
@@ -144,13 +102,11 @@ where
     let url = build_search_endpoint(&config);
     let headers = build_request_headers(&config);
 
-    let req_body = build_search_request(&args);
-    let body_bytes = serde_json::to_vec(&req_body)
-        .map_err(|e| format!("Failed to serialize search request body: {}", e))?;
+    let body_bytes = build_request_body_json(&config, &args)?;
 
     let (status, body) = http_fetch(&url, &headers, &body_bytes)?;
 
-    let output = parse_search_response(status, &body, &args.query)?;
+    let output = parse_search_response(status, &body, &args.query, args.num)?;
 
     serde_json::to_string(&output)
         .map_err(|e| format!("Failed to serialize search output to JSON: {}", e))
@@ -166,22 +122,19 @@ mod tests {
         let val: serde_json::Value = serde_json::from_str(&schema_str).unwrap();
         assert_eq!(val["type"], "object");
         assert!(val["properties"]["query"].is_object());
-        assert!(val["properties"]["project_id"].is_object());
-        assert!(val["properties"]["data_store_id"].is_object());
-        assert!(val["properties"]["engine_id"].is_object());
+        assert!(val["properties"]["num"].is_object());
+        assert!(val["properties"]["model"].is_object());
         assert!(val["properties"]["api_key"].is_object());
-        assert!(val["properties"]["auth_token"].is_object());
         assert_eq!(val["required"][0], "query");
     }
 
     #[test]
     fn test_parse_and_validate_args_valid() {
-        let json = r#"{"query": "  rust wasm  ", "num": 3, "project_id": "p1", "data_store_id": "ds1"}"#;
+        let json = r#"{"query": "  rust wasm  ", "num": 3, "api_key": "k1"}"#;
         let args = parse_and_validate_args(json).unwrap();
         assert_eq!(args.query, "rust wasm");
         assert_eq!(args.num, Some(3));
-        assert_eq!(args.project_id.as_deref(), Some("p1"));
-        assert_eq!(args.data_store_id.as_deref(), Some("ds1"));
+        assert_eq!(args.api_key.as_deref(), Some("k1"));
     }
 
     #[test]
@@ -201,57 +154,69 @@ mod tests {
     #[test]
     fn test_execute_search_with_mock() {
         let mock_body = r#"{
-            "totalSize": 100,
-            "results": [
+            "candidates": [
                 {
-                    "document": {
-                        "derivedStructData": {
-                            "title": "Rust Programming",
-                            "link": "https://www.rust-lang.org",
-                            "snippets": [
-                                {
-                                    "snippet": "Empowering everyone to build reliable software."
+                    "content": {
+                        "parts": [
+                            { "text": "Rust is a fast, memory-efficient programming language." }
+                        ]
+                    },
+                    "groundingMetadata": {
+                        "webSearchQueries": ["rust programming language overview"],
+                        "groundingChunks": [
+                            {
+                                "web": {
+                                    "uri": "https://www.rust-lang.org",
+                                    "title": "Rust Programming Language"
                                 }
-                            ]
-                        }
+                            }
+                        ],
+                        "groundingSupports": [
+                            {
+                                "groundingChunkIndices": [0],
+                                "segment": {
+                                    "text": "A language empowering everyone to build reliable and efficient software."
+                                }
+                            }
+                        ]
                     }
                 }
             ]
         }"#;
 
         let res = execute_search_with(
-            r#"{"query": "rust", "project_id": "p1", "data_store_id": "ds1", "api_key": "k1"}"#,
+            r#"{"query": "rust", "api_key": "k1"}"#,
             |_| None,
             |_| None,
             |_url, _headers, _body| Ok((200, mock_body.as_bytes().to_vec())),
         )
         .unwrap();
 
-        assert!(res.contains("Rust Programming"));
+        assert!(res.contains("Rust Programming Language"));
         assert!(res.contains("https://www.rust-lang.org"));
-        assert!(res.contains("Empowering everyone"));
+        assert!(res.contains("Rust is a fast, memory-efficient programming language."));
     }
 
     #[test]
     fn test_execute_search_with_api_error_response() {
         let error_body = r#"{
             "error": {
-                "code": 403,
-                "message": "Quota exceeded",
-                "status": "RESOURCE_EXHAUSTED"
+                "code": 400,
+                "message": "Invalid API key",
+                "status": "INVALID_ARGUMENT"
             }
         }"#;
 
         let res = execute_search_with(
-            r#"{"query": "rust", "project_id": "p1", "data_store_id": "ds1", "api_key": "k1"}"#,
+            r#"{"query": "rust", "api_key": "invalid_key"}"#,
             |_| None,
             |_| None,
-            |_url, _headers, _body| Ok((403, error_body.as_bytes().to_vec())),
+            |_url, _headers, _body| Ok((400, error_body.as_bytes().to_vec())),
         );
 
         assert!(res.is_err());
         let err = res.unwrap_err();
-        assert!(err.contains("Quota exceeded"));
-        assert!(err.contains("RESOURCE_EXHAUSTED"));
+        assert!(err.contains("Invalid API key"));
+        assert!(err.contains("400"));
     }
 }
