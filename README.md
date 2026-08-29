@@ -1,6 +1,6 @@
 # carapace-plugin-google-search-tool
 
-A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremachinery/carapace) that provides agents with **real-time Google Web Search across the entire public internet** via Google Search Grounding (Google AI Studio & Google Cloud Vertex AI).
+A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremachinery/carapace) that provides agents with **real-time Google Web Search across the entire public internet** via Google Search Grounding (Google AI Studio & Google Cloud Vertex AI / Agent Platform).
 
 ---
 
@@ -9,7 +9,7 @@ A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremach
 - **Whole-Web Search**: Searches Google's entire global public index in real time with **zero domain restrictions** or manual indexing required.
 - **Synthesized Answers & Live Citations**: Returns comprehensive answers grounded in live web results, search queries, page titles, URLs, and supported snippets.
 - **Simple 1-Minute Setup**: Works out of the box with a standard Gemini API Key from Google AI Studio (`aistudio.google.com`). No complex GCP cloud projects or custom search engines required.
-- **Enterprise Vertex AI Support**: Also supports enterprise Google Cloud Vertex AI projects using GCP Project ID and API keys or OAuth2 Bearer tokens.
+- **Enterprise Agent Platform / Vertex AI Support**: Also supports enterprise Google Cloud projects using GCP Project ID and API keys or OAuth2 Bearer tokens.
 - **Rich Query Options**: Supports citation limits (`num`/`page_size`), domain filtering (`site`), exact phrase matching (`exact_terms`), exclusion terms (`exclude_terms`), and model selection (`model`, default: `gemini-2.5-flash`).
 - **Sandboxed WebAssembly**: Built for `wasm32-unknown-unknown` running under Carapace's capability-based sandbox with strict HTTP allowlisting and credential isolation.
 
@@ -46,20 +46,46 @@ That's it! Your Carapace agents can now search the entire web using `google_sear
 
 ---
 
-## Enterprise Setup (Google Cloud Vertex AI)
+## Enterprise Setup (Google Cloud Agent Platform / Vertex AI)
 
-When using Google Cloud Vertex AI within an enterprise environment, you authenticate with a **GCP Project ID** and either a **Google Cloud API Key** (recommended for non-expiring access) or an **OAuth2 Bearer Token**.
+When using Google Cloud within an enterprise environment, you authenticate with a **GCP Project ID** and either a **Google Cloud API Key** (recommended for non-expiring access) or an **OAuth2 Bearer Token**.
+
+In the Google Cloud Console, this service is labeled as the **Agent Platform API** (API identifier: `aiplatform.googleapis.com`).
 
 > [!NOTE]
 > **Why doesn't the plugin auto-refresh `gcloud` tokens?**
-> Carapace WASM plugins run in a secure, sandboxed WebAssembly runtime without access to host shell commands or arbitrary subprocess execution (`gcloud`). To avoid token expirations, use **Method 1 (GCP API Key)**.
+> Carapace WASM plugins run in a secure, sandboxed WebAssembly runtime without access to host shell commands or arbitrary subprocess execution (`gcloud`). To avoid hourly token expirations, use **Method 1 (GCP API Key with Service Account)**.
 
-### Method 1: Using a Google Cloud API Key (Recommended — Non-Expiring)
+---
 
-1. Open the [Google Cloud Console > APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials).
-2. Click **Create Credentials** $\rightarrow$ **API Key**.
-3. _(Recommended)_ Click **Edit API Key**, and under **API restrictions**, restrict the key to the **Vertex AI API** (`aiplatform.googleapis.com`).
-4. Configure Carapace with your GCP Project ID and API Key:
+### Method 1: Using a Google Cloud API Key with Service Account (Recommended — Non-Expiring)
+
+Google Cloud requires API keys targeting the **Agent Platform API** (`aiplatform.googleapis.com`) to be associated with a Service Account for IAM authorization.
+
+#### Step 1: Enable the API
+
+1. Open the [Google Cloud Console > APIs & Services > Library](https://console.cloud.google.com/apis/library).
+2. Search for **`Agent Platform API`** (or `aiplatform.googleapis.com`) and click **Enable**.
+
+#### Step 2: Create a Service Account
+
+1. Go to **[IAM & Admin > Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts)**.
+2. Click **+ CREATE SERVICE ACCOUNT**.
+3. Name the service account (e.g. `carapace-search-tool`) and click **Create and Continue**.
+4. In the **Grant this service account access to project** step, assign the role:
+   - **Agent Platform User** (`roles/aiplatform.user`) or **Vertex AI User**
+5. Click **Done**.
+
+#### Step 3: Create & Associate the API Key
+
+1. Go to **[APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials)**.
+2. Click **+ CREATE CREDENTIALS** $\rightarrow$ **API key**.
+3. Click the pencil icon / **Edit API key**:
+   - Under **Service Account**, select **Authenticate API calls through a service account** and choose the service account created in Step 2 (`carapace-search-tool@...`).
+   - Under **API restrictions**, choose **Restrict key** and check **Agent Platform API** (or `aiplatform.googleapis.com`).
+4. Click **Save** and copy your API key.
+
+#### Step 4: Configure Carapace Credentials
 
 ```bash
 # Set your Google Cloud Project ID
@@ -69,7 +95,7 @@ cara config set plugins.google-search-tool.project_id "<YOUR_GCP_PROJECT_ID>"
 cara config set plugins.google-search-tool.api_key "<YOUR_GCP_API_KEY>"
 ```
 
-_(Alternatively, add to `carapace.json5`)_:
+_(Alternatively, configure directly in `carapace.json5`)_:
 
 ```json5
 {
@@ -107,7 +133,7 @@ OAuth2 Bearer tokens generated via `gcloud` or Service Accounts expire after **1
 
 #### Via Service Account Key
 
-1. In Google Cloud Console, create a Service Account with the **Vertex AI User** role (`roles/aiplatform.user`).
+1. In Google Cloud Console, create a Service Account with the **Agent Platform User** role (`roles/aiplatform.user`).
 2. Download the JSON key file, activate the account, and generate a token:
    ```bash
    gcloud auth activate-service-account --key-file=service-account-key.json
