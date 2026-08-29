@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-This project is a plugin for **Carapace**.
+This project is the **Google Search Tool Plugin** for **Carapace** (`carapace-plugin-google-search-tool`).
+
+It provides Carapace agents with web and image search capabilities by implementing the `google_search` tool over the Google Custom Search JSON API.
 
 ### What is Carapace?
 
@@ -28,7 +30,7 @@ This project is a plugin for **Carapace**.
 - When adding new tools, libraries, build dependencies, or compiler targets/extensions required by the project:
   - Update [`flake.nix`](flake.nix) in the workspace root by adding new packages to `devShells.default.buildInputs` or configuring `rustToolchain`.
   - Ensure any new or modified files are staged in Git (`git add flake.nix flake.lock`) so Nix can evaluate them in pure mode.
-  - Verify the shell evaluates and builds cleanly with `nix develop` or `direnv reload`.
+  - Verify the shell evaluates and builds cleanly with `nix develop` or `direnv reload``.
   - Always prefer maintaining dependencies declaratively in [`flake.nix`](flake.nix) over relying on unmanaged host-level installations.
 
 ## Architectural Constraints & Lessons Learned
@@ -40,18 +42,17 @@ This project is a plugin for **Carapace**.
   `Plugin instantiation failed: component imports instance wasi:cli/environment@0.2.3, but a matching implementation was not found in the linker`
 - **Solution**: The plugin must always compile for the pure **`wasm32-unknown-unknown`** target.
 
-### 2. In-Memory Virtual File System (VFS)
+### 2. Pure Rust & Sandboxed HTTP Access
 
-- Plugins run in a sandboxed WASM environment without ambient host filesystem syscalls (host filesystem access is reserved for native built-in tools).
-- All repository state (loose objects, trees, commits, tags, index, refs, worktree files) is maintained in-memory via `InMemoryVfs` (`src/engine/vfs.rs`).
-- Remote network operations (clone, fetch, pull, push) execute over HTTP/HTTPS via `carapace:plugin/host::http-fetch`.
-- Dependencies must be pure Rust without OS/libc dependencies (`flate2` with `miniz_oxide`, `sha1`, `chrono` with `alloc` and no `clock` feature, `serde_json` with `alloc`).
+- Plugins run in a sandboxed WASM environment without ambient host filesystem or socket syscalls.
+- Remote network operations (Google Custom Search API) execute over HTTP/HTTPS via `carapace:plugin/host::http-fetch`.
+- Dependencies must be pure Rust without OS/libc dependencies (`serde` and `serde_json` with `alloc`, custom URL percent encoder).
 
 ### 3. Plugin Manifest ID & Artifact Naming
 
 - Carapace's plugin ID validator requires alphanumeric lowercase identifiers with dashes (`^[a-z0-9-]+$`).
-- The plugin manifest ID is **`git-tools`**.
-- The WASM component filename stem must match the plugin ID: **`git-tools.wasm`** (not `carapace_plugin_git_tools.wasm`).
+- The plugin manifest ID is **`google-search-tool`**.
+- The WASM component filename stem must match the plugin ID: **`google-search-tool.wasm`**.
 
 ### 4. Component Export Naming & Inline World Interfaces
 

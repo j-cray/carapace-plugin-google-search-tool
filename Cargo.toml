@@ -1,0 +1,27 @@
+[package]
+name = "carapace-plugin-google-search-tool"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jake Wray <jakewray@mailbox.org>"]
+description = "Carapace plugin providing Google Custom Search tool capabilities"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wit-bindgen = "0.36.0"
+serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+carapace = { path = "carapace" }
+tokio = { version = "1.43", features = ["full"] }
+tempfile = "3.17"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = false

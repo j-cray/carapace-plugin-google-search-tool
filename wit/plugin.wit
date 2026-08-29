@@ -1,0 +1,98 @@
+package carapace:plugin@1.0.0;
+
+// Shared types across capabilities
+interface types {
+    // Result type for operations that can fail
+    record plugin-error {
+        code: string,
+        message: string,
+        retryable: bool,
+    }
+
+    // Tool invocation context
+    record tool-context {
+        agent-id: option<string>,
+        session-key: option<string>,
+        message-channel: option<string>,
+        sandboxed: bool,
+    }
+
+    // Tool execution result
+    record tool-result {
+        success: bool,
+        %result: option<string>,
+        error: option<string>,
+    }
+}
+
+// Host-provided capabilities for plugins
+interface host {
+    // Logging functions
+    log-debug: func(message: string);
+    log-info: func(message: string);
+    log-warn: func(message: string);
+    log-error: func(message: string);
+
+    // Configuration access (scoped to plugins.<plugin-id>.*)
+    config-get: func(key: string) -> option<string>;
+
+    // Credentials access (scoped to <plugin-id>:key)
+    credential-get: func(key: string) -> option<string>;
+    credential-set: func(key: string, value: string) -> bool;
+
+    // HTTP client request/response structures
+    record http-request {
+        method: string,
+        url: string,
+        headers: list<tuple<string, string>>,
+        body: option<list<u8>>,
+    }
+
+    record http-response {
+        status: u16,
+        headers: list<tuple<string, string>>,
+        body: option<list<u8>>,
+    }
+
+    // HTTP fetch (SSRF protected, rate limited)
+    http-fetch: func(req: http-request) -> result<http-response, string>;
+}
+
+// World definition for tool plugins with inline exported interfaces
+// Inline export names ensure the component exports top-level "manifest" and "tool" instances
+world tool-plugin {
+    import host;
+
+    export manifest: interface {
+        enum plugin-kind {
+            tool,
+            channel,
+            webhook,
+            service,
+            hook,
+        }
+
+        record plugin-manifest {
+            id: string,
+            name: string,
+            description: string,
+            version: string,
+            kind: plugin-kind,
+        }
+
+        get-manifest: func() -> plugin-manifest;
+    }
+
+    export tool: interface {
+        use types.{tool-context, tool-result, plugin-error};
+
+        record tool-definition {
+            name: string,
+            description: string,
+            input-schema: string,
+        }
+
+        get-definitions: func() -> list<tool-definition>;
+        invoke: func(name: string, params: string, ctx: tool-context) -> result<tool-result, plugin-error>;
+    }
+}

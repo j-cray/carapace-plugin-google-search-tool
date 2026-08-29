@@ -45,6 +45,7 @@
             # Build utilities & helpers
             pkg-config
             openssl
+            sqlite
             curl
             jq
           ];
