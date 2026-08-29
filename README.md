@@ -48,15 +48,67 @@ That's it! Your Carapace agents can now search the entire web using `google_sear
 
 ## Enterprise Setup (Google Cloud Vertex AI)
 
-If you prefer to route requests through an enterprise Google Cloud Vertex AI project:
+If you are using Google Cloud Vertex AI within an enterprise environment, you can authenticate using a **GCP Project ID** and an **OAuth2 Bearer Token** (or a Vertex AI-enabled GCP API key).
 
-```bash
-# Set your Google Cloud Project ID
-carapace credentials set google-search-tool:project_id "<YOUR_GCP_PROJECT_ID>"
+### How to Get an OAuth2 Bearer Token
 
-# Set your OAuth2 Bearer token (or Vertex-enabled API key)
-carapace credentials set google-search-tool:auth_token "<YOUR_ACCESS_TOKEN>"
-```
+#### Method 1: Using the Google Cloud CLI (`gcloud`)
+
+If you have the `gcloud` CLI installed locally:
+
+1. **Log in to Google Cloud:**
+
+   ```bash
+   gcloud auth login
+   ```
+
+2. **Set your GCP Project and enable the Vertex AI API:**
+
+   ```bash
+   gcloud config set project <YOUR_GCP_PROJECT_ID>
+   gcloud services enable aiplatform.googleapis.com
+   ```
+
+3. **Generate an OAuth2 Access / Bearer Token:**
+
+   ```bash
+   gcloud auth print-access-token
+   ```
+
+4. **Configure Carapace Credentials:**
+   ```bash
+   # Set your Google Cloud Project ID
+   carapace config set google-search-tool:project_id "<YOUR_GCP_PROJECT_ID>"
+
+   # Set your Bearer Token directly from gcloud
+   carapace config set google-search-tool:auth_token "$(gcloud auth print-access-token)"
+   ```
+
+---
+
+#### Method 2: Using a Service Account (Automated / Production)
+
+For headless servers or CI/CD environments:
+
+1. In Google Cloud Console, go to **IAM & Admin > Service Accounts** and create a service account.
+2. Grant the service account the **Vertex AI User** role (`roles/aiplatform.user`).
+3. Create and download a JSON key file (e.g. `service-account-key.json`).
+4. Activate the service account and generate a token:
+   ```bash
+   gcloud auth activate-service-account --key-file=service-account-key.json
+   gcloud auth print-access-token
+   ```
+5. Set credentials in Carapace:
+   ```bash
+   carapace config set google-search-tool:project_id "<YOUR_GCP_PROJECT_ID>"
+   carapace config set google-search-tool:auth_token "$(gcloud auth print-access-token)"
+   ```
+
+---
+
+> [!NOTE]
+> **Token Lifetime vs. API Keys**: OAuth2 Bearer tokens generated via `gcloud` expire after **1 hour** (3,600 seconds).
+> For persistent agent usage without hourly token refreshes, we recommend using a **Google AI Studio API Key** (from [Quick Setup](#quick-setup-1-minute)) or creating an API key in Google Cloud Console (**APIs & Services > Credentials**) restricted to the Vertex AI API.
 
 ---
 
