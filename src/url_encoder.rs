@@ -41,11 +41,12 @@ impl QueryBuilder {
         self
     }
 
-    /// Add an optional key-value pair if the value is `Some`.
+    /// Add an optional key-value pair if the value is `Some` and non-blank.
     pub fn add_optional_param(&mut self, key: &str, value: Option<&str>) -> &mut Self {
         if let Some(v) = value {
-            if !v.trim().is_empty() {
-                self.add_param(key, v.trim());
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                self.add_param(key, trimmed);
             }
         }
         self
@@ -84,6 +85,16 @@ mod tests {
     }
 
     #[test]
+    fn test_url_encode_utf8_multibyte() {
+        // 'café' -> %C3%A9
+        assert_eq!(url_encode("café"), "caf%C3%A9");
+        // '🦀' -> %F0%9F%A6%80
+        assert_eq!(url_encode("🦀"), "%F0%9F%A6%80");
+        // Japanese: '日本語' -> %E6%97%A5%E6%9C%AC%E8%AA%9E
+        assert_eq!(url_encode("日本語"), "%E6%97%A5%E6%9C%AC%E8%AA%9E");
+    }
+
+    #[test]
     fn test_query_builder() {
         let mut qb = QueryBuilder::new();
         qb.add_param("q", "rust wasm component");
@@ -94,5 +105,11 @@ mod tests {
 
         let query = qb.build_query_string();
         assert_eq!(query, "?q=rust%20wasm%20component&num=10&site=docs.rs");
+    }
+
+    #[test]
+    fn test_query_builder_empty() {
+        let qb = QueryBuilder::new();
+        assert_eq!(qb.build_query_string(), "");
     }
 }

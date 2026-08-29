@@ -114,8 +114,8 @@ impl ToolGuest for Component {
 
         let result = tools::execute_search_with(
             &params,
-            |key| credential_get(key),
-            |key| config_get(key),
+            credential_get,
+            config_get,
             |url| {
                 let req = HttpRequest {
                     method: "GET".to_string(),

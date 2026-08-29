@@ -41,6 +41,18 @@ pub fn tool_input_schema() -> String {
                 "type": "string",
                 "description": "Restrict results by date range (e.g. 'd1' for past 24h, 'w1' for past week, 'm1' for past month, 'y1' for past year)."
             },
+            "exact_terms": {
+                "type": "string",
+                "description": "Identifies a phrase that all documents in the search results must contain."
+            },
+            "exclude_terms": {
+                "type": "string",
+                "description": "Identifies a word or phrase that should not appear in any documents in the search results."
+            },
+            "sort": {
+                "type": "string",
+                "description": "The sort expression to apply to the results (e.g. 'date' to sort by date)."
+            },
             "safe": {
                 "type": "string",
                 "description": "SafeSearch filtering level ('active' or 'off'). Defaults to 'active'.",
@@ -76,12 +88,14 @@ pub fn tool_input_schema() -> String {
 
 /// Parse and validate search arguments from JSON input.
 pub fn parse_and_validate_args(params_json: &str) -> Result<SearchArgs, String> {
-    let args: SearchArgs = serde_json::from_str(params_json)
+    let mut args: SearchArgs = serde_json::from_str(params_json)
         .map_err(|e| format!("Invalid arguments for google_search tool: {}", e))?;
 
-    if args.query.trim().is_empty() {
+    let trimmed_query = args.query.trim();
+    if trimmed_query.is_empty() {
         return Err("Argument 'query' must not be empty.".to_string());
     }
+    args.query = trimmed_query.to_string();
 
     Ok(args)
 }
@@ -118,11 +132,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_tool_input_schema_is_valid_json() {
+        let schema_str = tool_input_schema();
+        let val: serde_json::Value = serde_json::from_str(&schema_str).unwrap();
+        assert_eq!(val["type"], "object");
+        assert!(val["properties"]["query"].is_object());
+        assert!(val["properties"]["exact_terms"].is_object());
+        assert!(val["properties"]["exclude_terms"].is_object());
+        assert!(val["properties"]["sort"].is_object());
+        assert_eq!(val["required"][0], "query");
+    }
+
+    #[test]
     fn test_parse_and_validate_args_valid() {
-        let json = r#"{"query": "rust wasm", "num": 3}"#;
+        let json = r#"{"query": "  rust wasm  ", "num": 3, "exact_terms": "component"}"#;
         let args = parse_and_validate_args(json).unwrap();
         assert_eq!(args.query, "rust wasm");
         assert_eq!(args.num, Some(3));
+        assert_eq!(args.exact_terms.as_deref(), Some("component"));
     }
 
     #[test]
@@ -130,6 +157,13 @@ mod tests {
         let json = r#"{"query": "   "}"#;
         let err = parse_and_validate_args(json).unwrap_err();
         assert!(err.contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_args_missing_query() {
+        let json = r#"{"num": 5}"#;
+        let err = parse_and_validate_args(json).unwrap_err();
+        assert!(err.contains("missing field `query`"));
     }
 
     #[test]
@@ -159,5 +193,28 @@ mod tests {
 
         assert!(res.contains("Rust Programming"));
         assert!(res.contains("https://www.rust-lang.org"));
+    }
+
+    #[test]
+    fn test_execute_search_with_api_error_response() {
+        let error_body = r#"{
+            "error": {
+                "code": 403,
+                "message": "Daily limit exceeded",
+                "status": "RESOURCE_EXHAUSTED"
+            }
+        }"#;
+
+        let res = execute_search_with(
+            r#"{"query": "rust", "api_key": "k1", "cx": "c1"}"#,
+            |_| None,
+            |_| None,
+            |_url| Ok((403, error_body.as_bytes().to_vec())),
+        );
+
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.contains("Daily limit exceeded"));
+        assert!(err.contains("RESOURCE_EXHAUSTED"));
     }
 }

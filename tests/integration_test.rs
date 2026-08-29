@@ -85,16 +85,20 @@ async fn test_carapace_loads_google_search_tool_component() {
 
     assert!(search_tool.description.contains("Google Search"));
     assert!(search_tool.input_schema.contains("query"));
+    assert!(search_tool.input_schema.contains("exact_terms"));
+    assert!(search_tool.input_schema.contains("exclude_terms"));
+    assert!(search_tool.input_schema.contains("sort"));
 
-    // Verify invocation with empty arguments produces validation error as expected
     let ctx = ToolContext {
         agent_id: None,
         session_key: None,
         message_channel: None,
         sandboxed: false,
     };
+
+    // Verify invocation with empty arguments produces validation error as expected
     let tool_res = tool_instance
-        .invoke("google_search", "{}", ctx)
+        .invoke("google_search", "{}", ctx.clone())
         .expect("Tool invocation call should succeed");
 
     assert!(!tool_res.success);
@@ -105,4 +109,20 @@ async fn test_carapace_loads_google_search_tool_component() {
         "Unexpected error message: {}",
         err
     );
+
+    // Verify invocation with whitespace query produces validation error
+    let whitespace_res = tool_instance
+        .invoke("google_search", r#"{"query": "   "}"#, ctx.clone())
+        .expect("Tool invocation call should succeed");
+    assert!(!whitespace_res.success);
+    let ws_err = whitespace_res.error.expect("Expected error for empty query");
+    assert!(ws_err.contains("Argument 'query' must not be empty."));
+
+    // Verify invocation with unknown tool name returns error
+    let unknown_res = tool_instance
+        .invoke("unknown_search_tool", "{}", ctx)
+        .expect("Tool invocation call should succeed");
+    assert!(!unknown_res.success);
+    let unk_err = unknown_res.error.expect("Expected error for unknown tool");
+    assert!(unk_err.contains("Unknown tool: unknown_search_tool"));
 }

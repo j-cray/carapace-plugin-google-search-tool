@@ -7,7 +7,7 @@ A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremach
 ## Features
 
 - **Google Search Integration**: Exposes the `google_search` tool to LLMs running in Carapace.
-- **Rich Query Parameters**: Supports query customization including result count (`num`), pagination (`start`), site filtering (`site`), file types (`file_type`), date ranges (`date_restrict`), SafeSearch (`safe`), language (`language`), country (`country`), and image search (`search_type`).
+- **Rich Query Parameters**: Supports query customization including result count (`num`), pagination (`start`), site filtering (`site`), file types (`file_type`), date ranges (`date_restrict`), exact phrase matching (`exact_terms`), exclusion terms (`exclude_terms`), sorting (`sort`), SafeSearch (`safe`), language (`language`), country (`country`), and image search (`search_type`).
 - **Flexible Credential Resolution**: Automatically resolves Google Cloud API Key and Search Engine ID (`cx`) from Carapace Credential Store, gateway configuration (`carapace.json`), or per-call parameters.
 - **Sandboxed & Pure WebAssembly**: Targets `wasm32-unknown-unknown` without ambient WASI preview dependencies, running fully within Carapace's memory and capability sandbox.
 - **Granular Security Permissions**: Declares precise HTTP URL allowlists and credential scopes in the embedded plugin manifest.
@@ -74,6 +74,9 @@ carapace credentials set google-search-tool:cx "<YOUR_SEARCH_ENGINE_ID>"
 | `site`          | `string`  | No       | —          | Restrict results to a domain (e.g. `docs.rs` or `github.com`).                        |
 | `file_type`     | `string`  | No       | —          | Restrict results by file extension (e.g. `pdf`, `json`).                              |
 | `date_restrict` | `string`  | No       | —          | Date range filter (`d1` for 24h, `w1` for 1 week, `m1` for 1 month, `y1` for 1 year). |
+| `exact_terms`   | `string`  | No       | —          | Phrase that all documents in search results must contain.                             |
+| `exclude_terms` | `string`  | No       | —          | Word or phrase that should not appear in any documents in search results.             |
+| `sort`          | `string`  | No       | —          | Sort expression to apply to the results (e.g. `date` to sort by date).                |
 | `safe`          | `string`  | No       | `"active"` | SafeSearch level (`"active"` or `"off"`).                                             |
 | `language`      | `string`  | No       | —          | Language code filter (e.g. `lang_en`).                                                |
 | `country`       | `string`  | No       | —          | Geolocation country code (e.g. `us`, `uk`).                                           |

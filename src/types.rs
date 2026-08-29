@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Tool input arguments for the `google_search` tool.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SearchArgs {
     /// Search query string (required)
     pub query: String,
@@ -27,6 +27,18 @@ pub struct SearchArgs {
     /// Restrict results by date (e.g. "d1", "w1", "m1", "y1")
     #[serde(default)]
     pub date_restrict: Option<String>,
+
+    /// Phrase that all documents in the search results must contain
+    #[serde(default)]
+    pub exact_terms: Option<String>,
+
+    /// Word or phrase that should not appear in any documents in search results
+    #[serde(default)]
+    pub exclude_terms: Option<String>,
+
+    /// Sort expression to apply to the results (e.g. "date")
+    #[serde(default)]
+    pub sort: Option<String>,
 
     /// SafeSearch filter level ("active" or "off", default "active")
     #[serde(default)]
@@ -54,7 +66,7 @@ pub struct SearchArgs {
 }
 
 /// Raw Google Custom Search API JSON response root.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 pub struct GoogleSearchApiResponse {
     /// List of search result items
     #[serde(default)]
@@ -74,7 +86,7 @@ pub struct GoogleSearchApiResponse {
 }
 
 /// A single search result item returned by Google Custom Search API.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 pub struct GoogleSearchItem {
     /// Title of the search result
     #[serde(default)]
@@ -102,7 +114,7 @@ pub struct GoogleSearchItem {
 }
 
 /// Search information metadata returned by Google Custom Search API.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 pub struct GoogleSearchInformation {
     /// Total search results found (string format from Google)
     #[serde(default, rename = "totalResults")]
@@ -122,7 +134,7 @@ pub struct GoogleSearchInformation {
 }
 
 /// Suggested spelling correction from Google.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct GoogleSearchSpelling {
     /// Corrected query suggestion
     #[serde(default, rename = "correctedQuery")]
@@ -134,14 +146,14 @@ pub struct GoogleSearchSpelling {
 }
 
 /// Google API Error envelope returned on HTTP error statuses.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct GoogleApiErrorResponse {
     #[serde(default)]
     pub error: Option<GoogleApiErrorPayload>,
 }
 
 /// Detailed error payload from Google API.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct GoogleApiErrorPayload {
     /// HTTP error status code
     #[serde(default)]
@@ -161,7 +173,7 @@ pub struct GoogleApiErrorPayload {
 }
 
 /// Individual error item inside Google's error payload.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct GoogleApiErrorItem {
     #[serde(default)]
     pub message: Option<String>,
@@ -172,7 +184,7 @@ pub struct GoogleApiErrorItem {
 }
 
 /// Structured search output returned to the Carapace agent.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SearchResultOutput {
     /// The query that was searched
     pub query: String,
@@ -197,7 +209,7 @@ pub struct SearchResultOutput {
 }
 
 /// Formatted individual result item.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SearchResultItem {
     /// Title of the webpage or result
     pub title: String,
