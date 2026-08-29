@@ -9,7 +9,7 @@ A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremach
 - **Whole-Web Search**: Searches Google's entire global public index in real time with **zero domain restrictions** or manual indexing required.
 - **Synthesized Answers & Live Citations**: Returns comprehensive answers grounded in live web results, search queries, page titles, URLs, and supported snippets.
 - **Simple 1-Minute Setup**: Works out of the box with a standard Gemini API Key from Google AI Studio (`aistudio.google.com`). No complex GCP cloud projects or custom search engines required.
-- **Enterprise Vertex AI Support**: Also supports enterprise Google Cloud Vertex AI projects using GCP Project ID and OAuth2 Bearer tokens or API keys.
+- **Enterprise Vertex AI Support**: Also supports enterprise Google Cloud Vertex AI projects using GCP Project ID and API keys or OAuth2 Bearer tokens.
 - **Rich Query Options**: Supports citation limits (`num`/`page_size`), domain filtering (`site`), exact phrase matching (`exact_terms`), exclusion terms (`exclude_terms`), and model selection (`model`, default: `gemini-2.5-flash`).
 - **Sandboxed WebAssembly**: Built for `wasm32-unknown-unknown` running under Carapace's capability-based sandbox with strict HTTP allowlisting and credential isolation.
 
@@ -24,21 +24,21 @@ A WebAssembly (WASM) component plugin for [Carapace](https://github.com/puremach
 
 ### 2. Configure Credentials in Carapace
 
-Set your API key using the Carapace CLI:
+Set your API key using the Carapace CLI (`cara`):
 
 ```bash
-carapace config set google-search-tool:api_key "<YOUR_GEMINI_API_KEY>"
+cara config set plugins.google-search-tool.api_key "<YOUR_GEMINI_API_KEY>"
 ```
 
-_(Alternatively, add it to your `carapace.json`)_:
+_(Alternatively, add it to your `carapace.json5`)_:
 
-```json
+```json5
 {
-  "plugins": {
+  plugins: {
     "google-search-tool": {
-      "api_key": "AIzaSy..."
-    }
-  }
+      api_key: "AIzaSy...",
+    },
+  },
 }
 ```
 
@@ -48,67 +48,76 @@ That's it! Your Carapace agents can now search the entire web using `google_sear
 
 ## Enterprise Setup (Google Cloud Vertex AI)
 
-If you are using Google Cloud Vertex AI within an enterprise environment, you can authenticate using a **GCP Project ID** and an **OAuth2 Bearer Token** (or a Vertex AI-enabled GCP API key).
+When using Google Cloud Vertex AI within an enterprise environment, you authenticate with a **GCP Project ID** and either a **Google Cloud API Key** (recommended for non-expiring access) or an **OAuth2 Bearer Token**.
 
-### How to Get an OAuth2 Bearer Token
+> [!NOTE]
+> **Why doesn't the plugin auto-refresh `gcloud` tokens?**
+> Carapace WASM plugins run in a secure, sandboxed WebAssembly runtime without access to host shell commands or arbitrary subprocess execution (`gcloud`). To avoid token expirations, use **Method 1 (GCP API Key)**.
 
-#### Method 1: Using the Google Cloud CLI (`gcloud`)
+### Method 1: Using a Google Cloud API Key (Recommended — Non-Expiring)
 
-If you have the `gcloud` CLI installed locally:
+1. Open the [Google Cloud Console > APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials).
+2. Click **Create Credentials** $\rightarrow$ **API Key**.
+3. _(Recommended)_ Click **Edit API Key**, and under **API restrictions**, restrict the key to the **Vertex AI API** (`aiplatform.googleapis.com`).
+4. Configure Carapace with your GCP Project ID and API Key:
 
-1. **Log in to Google Cloud:**
+```bash
+# Set your Google Cloud Project ID
+cara config set plugins.google-search-tool.project_id "<YOUR_GCP_PROJECT_ID>"
+
+# Set your GCP API Key
+cara config set plugins.google-search-tool.api_key "<YOUR_GCP_API_KEY>"
+```
+
+_(Alternatively, add to `carapace.json5`)_:
+
+```json5
+{
+  plugins: {
+    "google-search-tool": {
+      project_id: "<YOUR_GCP_PROJECT_ID>",
+      api_key: "<YOUR_GCP_API_KEY>",
+      location: "us-central1", // optional (default: "us-central1")
+    },
+  },
+}
+```
+
+---
+
+### Method 2: Using an OAuth2 Bearer Token (Expires Hourly)
+
+OAuth2 Bearer tokens generated via `gcloud` or Service Accounts expire after **1 hour** (3,600 seconds).
+
+#### Via `gcloud` CLI
+
+1. **Log in and set your project:**
 
    ```bash
    gcloud auth login
-   ```
-
-2. **Set your GCP Project and enable the Vertex AI API:**
-
-   ```bash
    gcloud config set project <YOUR_GCP_PROJECT_ID>
    gcloud services enable aiplatform.googleapis.com
    ```
 
-3. **Generate an OAuth2 Access / Bearer Token:**
-
+2. **Configure Carapace Credentials:**
    ```bash
-   gcloud auth print-access-token
+   cara config set plugins.google-search-tool.project_id "<YOUR_GCP_PROJECT_ID>"
+   cara config set plugins.google-search-tool.auth_token "$(gcloud auth print-access-token)"
    ```
 
-4. **Configure Carapace Credentials:**
-   ```bash
-   # Set your Google Cloud Project ID
-   carapace config set google-search-tool:project_id "<YOUR_GCP_PROJECT_ID>"
+#### Via Service Account Key
 
-   # Set your Bearer Token directly from gcloud
-   carapace config set google-search-tool:auth_token "$(gcloud auth print-access-token)"
-   ```
-
----
-
-#### Method 2: Using a Service Account (Automated / Production)
-
-For headless servers or CI/CD environments:
-
-1. In Google Cloud Console, go to **IAM & Admin > Service Accounts** and create a service account.
-2. Grant the service account the **Vertex AI User** role (`roles/aiplatform.user`).
-3. Create and download a JSON key file (e.g. `service-account-key.json`).
-4. Activate the service account and generate a token:
+1. In Google Cloud Console, create a Service Account with the **Vertex AI User** role (`roles/aiplatform.user`).
+2. Download the JSON key file, activate the account, and generate a token:
    ```bash
    gcloud auth activate-service-account --key-file=service-account-key.json
    gcloud auth print-access-token
    ```
-5. Set credentials in Carapace:
+3. Set credentials in Carapace:
    ```bash
-   carapace config set google-search-tool:project_id "<YOUR_GCP_PROJECT_ID>"
-   carapace config set google-search-tool:auth_token "$(gcloud auth print-access-token)"
+   cara config set plugins.google-search-tool.project_id "<YOUR_GCP_PROJECT_ID>"
+   cara config set plugins.google-search-tool.auth_token "$(gcloud auth print-access-token)"
    ```
-
----
-
-> [!NOTE]
-> **Token Lifetime vs. API Keys**: OAuth2 Bearer tokens generated via `gcloud` expire after **1 hour** (3,600 seconds).
-> For persistent agent usage without hourly token refreshes, we recommend using a **Google AI Studio API Key** (from [Quick Setup](#quick-setup-1-minute)) or creating an API key in Google Cloud Console (**APIs & Services > Credentials**) restricted to the Vertex AI API.
 
 ---
 

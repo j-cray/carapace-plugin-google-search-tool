@@ -165,7 +165,7 @@ where
         if auth_token.is_none() && api_key.is_none() {
             return Err(
                 "When using Google Cloud Vertex AI (project_id), you must provide authentication credentials \
-                 via 'carapace config set google-search-tool:auth_token <ACCESS_TOKEN>' or 'carapace config set google-search-tool:api_key <API_KEY>'."
+                 via 'cara config set plugins.google-search-tool.api_key <API_KEY>' or 'cara config set plugins.google-search-tool.auth_token <ACCESS_TOKEN>'."
                     .to_string(),
             );
         }
@@ -183,7 +183,7 @@ where
 
     if let Some(_token) = auth_token {
         return Err(
-            "OAuth2 Bearer tokens require a Google Cloud Project ID. Set it with 'carapace config set google-search-tool:project_id <PROJECT_ID>'."
+            "OAuth2 Bearer tokens require a Google Cloud Project ID. Set it with 'cara config set plugins.google-search-tool.project_id <PROJECT_ID>'."
                 .to_string(),
         );
     }
@@ -197,9 +197,9 @@ where
 
     Err(
         "Missing Google Search API credentials. To search the entire web, set your Gemini API key with:\n\
-         'carapace config set google-search-tool:api_key <YOUR_GEMINI_API_KEY>'\n\
+         'cara config set plugins.google-search-tool.api_key <YOUR_GEMINI_API_KEY>'\n\
          (Get a free API key at https://aistudio.google.com/app/apikey)\n\
-         Or configure a Google Cloud Vertex AI project with 'project_id' and 'auth_token'."
+         Or configure a Google Cloud Vertex AI project with 'project_id' and 'api_key' or 'auth_token'."
             .to_string(),
     )
 }
